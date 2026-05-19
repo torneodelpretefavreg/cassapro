@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>⚽ CassaPro — Torneo del Prete</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <!-- SheetJS for real Excel .xlsx export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <!-- Firebase Realtime Database -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script>
+    // ⬇️ INCOLLA QUI LA TUA CONFIG FIREBASE (vedi sezione Impostazioni nel menu)
+    const FIREBASE_CONFIG = {
+      apiKey: localStorage.getItem("fb_apiKey") || "",
+      authDomain: localStorage.getItem("fb_authDomain") || "",
+      databaseURL: localStorage.getItem("fb_databaseURL") || "",
+      projectId: localStorage.getItem("fb_projectId") || "",
+      storageBucket: localStorage.getItem("fb_storageBucket") || "",
+      messagingSenderId: localStorage.getItem("fb_messagingSenderId") || "",
+      appId: localStorage.getItem("fb_appId") || ""
+    };
+    let db = null;
+    try {
+      if (FIREBASE_CONFIG.databaseURL) {
+        firebase.initializeApp(FIREBASE_CONFIG);
+        db = firebase.database();
+      }
+    } catch(e) { console.warn("Firebase non configurato:", e); }
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    html, body { height: 100%; overflow: hidden; background: #0f172a; }
+    /* monospace solo dove serve davvero */
+    .mono, [style*="Courier"] { font-family: 'JetBrains Mono', 'Courier New', monospace !important; }
+    #root { height: 100%; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+    button { -webkit-tap-highlight-color: transparent; }
+
+    /* ── TEMA CHIARO ── attivato quando <html> ha class="light" ── */
+    html.light body { background: #f5f5f0 !important; }
+    html.light [style*="background: rgb(15, 23, 42)"],
+    html.light [style*="background:#0f172a"],
+    html.light [style*="background: #0f172a"] { background: #f5f5f0 !important; }
+    html.light [style*="background:#1e293b"],
+    html.light [style*="background: #1e293b"],
+    html.light [style*="background: rgb(30, 41, 59)"] { background: #ffffff !important; border-color: #d4d4d0 !important; }
+    html.light [style*="background:#131f30"],
+    html.light [style*="background: #131f30"] { background: #fafaf5 !important; }
+    html.light [style*="background:#334155"],
+    html.light [style*="background: #334155"] { background: #e5e5e0 !important; }
+    html.light [style*="border: 1px solid rgb(51, 65, 85)"],
+    html.light [style*="border:1px solid #334155"],
+    html.light [style*="border: 1px solid #334155"] { border-color: #d4d4d0 !important; }
+    html.light [style*="borderBottom: 1px solid rgb(30, 41, 59)"],
+    html.light [style*="border-bottom: 1px solid rgb(30, 41, 59)"],
+    html.light [style*="borderTop: 1px solid rgb(30, 41, 59)"] { border-color: #e5e5e0 !important; }
+
+    /* Testo: scuro su sfondo chiaro */
+    html.light [style*="color: rgb(226, 232, 240)"],
+    html.light [style*="color:#e2e8f0"],
+    html.light [style*="color: #e2e8f0"] { color: #1a1a1a !important; }
+    html.light [style*="color: rgb(248, 250, 252)"],
+    html.light [style*="color:#f8fafc"],
+    html.light [style*="color: #f8fafc"] { color: #0a0a0a !important; }
+    html.light [style*="color: rgb(241, 245, 249)"],
+    html.light [style*="color:#f1f5f9"],
+    html.light [style*="color: #f1f5f9"] { color: #0a0a0a !important; }
+    html.light [style*="color: rgb(203, 213, 225)"],
+    html.light [style*="color:#cbd5e1"],
+    html.light [style*="color: #cbd5e1"] { color: #262626 !important; }
+    html.light [style*="color: rgb(148, 163, 184)"],
+    html.light [style*="color:#94a3b8"],
+    html.light [style*="color: #94a3b8"] { color: #525252 !important; }
+    html.light [style*="color: rgb(100, 116, 139)"],
+    html.light [style*="color:#64748b"],
+    html.light [style*="color: #64748b"] { color: #737373 !important; }
+    html.light [style*="color: rgb(71, 85, 105)"],
+    html.light [style*="color:#475569"],
+    html.light [style*="color: #475569"] { color: #a3a3a3 !important; }
+
+    /* Verdi (totali, successo) — più scuri */
+    html.light [style*="color: rgb(74, 222, 128)"],
+    html.light [style*="color:#4ade80"],
+    html.light [style*="color: #4ade80"] { color: #15803d !important; }
+
+    /* Rossi (prezzi) — più scuri */
+    html.light [style*="color: rgb(248, 113, 113)"],
+    html.light [style*="color:#f87171"],
+    html.light [style*="color: #f87171"] { color: #b91c1c !important; }
+
+    /* Gialli (warning) — più scuri */
+    html.light [style*="color: rgb(251, 191, 36)"],
+    html.light [style*="color:#fbbf24"],
+    html.light [style*="color: #fbbf24"] { color: #b45309 !important; }
+
+    /* Input chiari */
+    html.light input { background: #ffffff !important; color: #1a1a1a !important; border-color: #d4d4d0 !important; }
+    html.light input::placeholder { color: #a3a3a3 !important; }
+
+    /* Bottoni primari (rosso) restano rossi anche in light mode */
+    html.light [style*="background: rgb(220, 38, 38)"],
+    html.light [style*="background:#dc2626"],
+    html.light [style*="background: #dc2626"] { background: #dc2626 !important; color: #fff !important; }
+    html.light [style*="background: rgb(21, 128, 61)"],
+    html.light [style*="background:#15803d"] { background: #15803d !important; color: #fff !important; }
+
+    /* Ombre più morbide in light */
+    html.light [style*="box-shadow: rgba(0, 0, 0, 0.5)"] { box-shadow: 0 8px 40px rgba(0,0,0,0.15) !important; }
+
+    @page { margin: 0mm 2mm; size: 76mm auto; }
+    @media print {
+      body * { visibility: hidden !important; }
+      #receipt-print, #receipt-print * { visibility: visible !important; }
+      #receipt-print {
+        position: fixed !important; top: 0 !important; left: 0 !important;
+        width: 72mm !important; font-family: 'Courier New', monospace !important;
+        font-size: 11px !important; color: #000 !important; background: #fff !important;
+        padding: 2mm !important; font-weight: bold !important;
+        -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const MENU = [
+  { id:1,  name:"Panino Salsiccia",         price:6.00,  cat:"🥪 Panini" },
+  { id:2,  name:"Hamburger Scottona",        price:8.00,  cat:"🥪 Panini" },
+  { id:3,  name:"Panino Cotoletta",          price:5.00,  cat:"🥪 Panini" },
+  { id:4,  name:"Patatine Fritte",           price:3.00,  cat:"🍟 Fritti" },
+  { id:5,  name:"Nuggets Pollo",             price:3.00,  cat:"🍟 Fritti" },
+  { id:6,  name:"Anelli di Cipolla",         price:3.00,  cat:"🍟 Fritti" },
+  { id:7,  name:"Pizza Margherita",          price:3.00,  cat:"🍕 Extra" },
+  { id:8,  name:"Acqua",                     price:1.00,  cat:"🥤 Analc." },
+  { id:9,  name:"Coca-Cola Spina",           price:3.00,  cat:"🥤 Analc." },
+  { id:10, name:"Thè",                       price:1.50,  cat:"🥤 Analc." },
+  { id:11, name:"Fanta",                     price:2.00,  cat:"🥤 Analc." },
+  { id:12, name:"Red Bull",                  price:2.00,  cat:"🥤 Analc." },
+  { id:13, name:"Lemon Soda",                price:2.00,  cat:"🥤 Analc." },
+  { id:14, name:"Birra Spina",               price:4.00,  cat:"🍺 Alcolici" },
+  { id:15, name:"Spritz",                    price:4.00,  cat:"🍺 Alcolici" },
+  { id:16, name:"Prosecco",                  price:4.00,  cat:"🍺 Alcolici" },
+  { id:17, name:"Gin Tonic/Lemon",           price:5.00,  cat:"🍺 Alcolici" },
+  { id:18, name:"Vodka Tonic/Lemon",         price:5.00,  cat:"🍺 Alcolici" },
+  { id:19, name:"Gin Malfy",                 price:7.00,  cat:"🍺 Alcolici" },
+  { id:20, name:"Gin Hendricks",             price:8.00,  cat:"🍺 Alcolici" },
+  { id:21, name:"Gin Mare",                  price:10.00, cat:"🍺 Alcolici" },
+  { id:22, name:"Jager-Bomb",                price:5.00,  cat:"🍺 Alcolici" },
+  { id:23, name:"4 Bianchi Maracuja",        price:5.00,  cat:"🍺 Alcolici" },
+  { id:24, name:"Negroni",                   price:5.00,  cat:"🍺 Alcolici" },
+  { id:25, name:"Rum e Pera",                price:3.00,  cat:"🥃 Shot" },
+  { id:26, name:"Tequila S.L.",              price:3.00,  cat:"🥃 Shot" },
+  { id:27, name:"Montenegro",                price:3.00,  cat:"🥃 Shot" },
+  { id:28, name:"Jagermeister",              price:3.00,  cat:"🥃 Shot" },
+];
+
+const CATS = ["Tutti", ...new Set(MENU.map(i => i.cat))];
+const fmt = n => "€" + n.toFixed(2);
+let rcptN = parseInt(localStorage.getItem("rcpt_n") || "1");
+
+/* ── LOGIN ── */
+function Login({ onLogin }) {
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState(false);
+  const check = () => {
+    if (pwd === "Torneo2026") { onLogin(); }
+    else { setErr(true); setPwd(""); setTimeout(() => setErr(false), 1500); }
+  };
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit",padding:20}}>
+      <div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:20,padding:"40px 28px",textAlign:"center",width:"100%",maxWidth:340}}>
+        <div style={{fontSize:56,marginBottom:10}}>⚽</div>
+        <div style={{fontSize:24,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.5px"}}>Torneo del Prete</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:28}}>Inserisci la password</div>
+        <input type="password" value={pwd}
+          onChange={e=>{setPwd(e.target.value);setErr(false);}}
+          onKeyDown={e=>e.key==="Enter"&&check()}
+          placeholder="Password" autoFocus
+          style={{width:"100%",background:err?"#3b0d0d":"#0f172a",border:`2px solid ${err?"#dc2626":"#334155"}`,color:err?"#f87171":"#e2e8f0",padding:"14px 16px",borderRadius:10,fontSize:18,fontFamily:"inherit",outline:"none",textAlign:"center",letterSpacing:6,marginBottom:10,transition:"all 0.2s"}}
+        />
+        {err && <div style={{color:"#f87171",fontSize:13,marginBottom:8}}>❌ Password errata</div>}
+        <button onClick={check} style={{width:"100%",background:"#dc2626",border:"none",color:"#fff",padding:16,borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:17,fontWeight:900,marginTop:6,letterSpacing:1}}>
+          ENTRA →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── POS ── */
+function POS({ theme, toggleTheme }) {
+  const [cart, setCart]     = useState([]);
+  const [view, setView]     = useState("cassa"); // cassa | carrello | scontrino | report | impostazioni
+  const [cat, setCat]       = useState("Tutti");
+  const [orders, setOrders] = useState(() => { try { return JSON.parse(localStorage.getItem("orders")||"[]"); } catch{return[];} });
+  const [lastR, setLastR]   = useState(null);
+  const [rcptIdx, setRcptIdx] = useState(0);
+  const [synced, setSynced] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("local"); // local | connected | error
+
+  // Firebase sync
+  useEffect(() => {
+    if (!db) { setSyncStatus("local"); return; }
+    setSyncStatus("connecting");
+    const ref = db.ref("torneo/orders");
+    const handler = snap => {
+      const val = snap.val();
+      if (val) {
+        const arr = Object.entries(val).map(([k,v])=>({...v,_key:k})).sort((a,b)=>a.id-b.id);
+        setOrders(arr);
+        localStorage.setItem("orders", JSON.stringify(arr));
+      } else {
+        setOrders([]);
+      }
+      setSynced(true);
+      setSyncStatus("connected");
+    };
+    ref.on("value", handler, () => setSyncStatus("error"));
+    return () => ref.off("value", handler);
+  }, []);
+  const [search, setSearch] = useState("");
+  const [pay, setPay]       = useState("contanti");
+  const [disc, setDisc]     = useState(0);
+  const [table, setTable]   = useState("");
+  const [flash, setFlash]   = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+
+  const subtotal = cart.reduce((s,i)=>s+i.price*i.qty,0);
+  const discAmt  = subtotal*(disc/100);
+  const total    = subtotal-discAmt;
+  const cartCount = cart.reduce((s,i)=>s+i.qty,0);
+
+  const addItem = item => {
+    setCart(p=>{const e=p.find(i=>i.id===item.id);return e?p.map(i=>i.id===item.id?{...i,qty:i.qty+1}:i):[...p,{...item,qty:1}];});
+    setFlash("+1 "+item.name);
+    setTimeout(()=>setFlash(null),900);
+  };
+  const remItem = id => setCart(p=>{const e=p.find(i=>i.id===id);return e.qty===1?p.filter(i=>i.id!==id):p.map(i=>i.id===id?{...i,qty:i.qty-1}:i);});
+  const clearCart = ()=>{setCart([]);setDisc(0);setTable("");};
+
+  const CIBO_CATS = ["🥪 Panini","🍟 Fritti","🍕 Extra"];
+  const BAR_CATS  = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
+
+  const checkout = () => {
+    if (!cart.length) return;
+    const now = new Date().toLocaleString("it-IT");
+    const ciboItems = cart.filter(i => CIBO_CATS.includes(i.cat));
+    const barItems  = cart.filter(i => BAR_CATS.includes(i.cat));
+    const receipts  = [];
+
+    const makeReceipt = (items, centro) => {
+      const sub  = items.reduce((s,i)=>s+i.price*i.qty,0);
+      const dAmt = sub*(disc/100);
+      return {
+        id: rcptN++,
+        date: now,
+        items,
+        subtotal: sub,
+        disc,
+        discAmt: dAmt,
+        total: sub - dAmt,
+        pay,
+        table: table||null,
+        centro,
+      };
+    };
+
+    if (ciboItems.length) receipts.push(makeReceipt(ciboItems, "🍕 CIBO"));
+    if (barItems.length)  receipts.push(makeReceipt(barItems,  "🍺 BAR"));
+
+    localStorage.setItem("rcpt_n", rcptN);
+
+    receipts.forEach(r => {
+      if (db) {
+        db.ref("torneo/orders").push(r).catch(()=>{
+          const no=[...orders,...receipts];
+          setOrders(no);
+          localStorage.setItem("orders",JSON.stringify(no));
+        });
+      } else {
+        const no=[...orders,...receipts];
+        setOrders(no);
+        localStorage.setItem("orders",JSON.stringify(no));
+      }
+    });
+
+    setLastR(receipts); // array of receipts
+    setRcptIdx(0);
+    clearCart();
+    setView("scontrino");
+  };
+
+  const deleteAllOrders = () => {
+    if (!window.confirm("Eliminare tutti i dati? Non si può annullare.")) return;
+    if (db) { db.ref("torneo/orders").remove(); }
+    setOrders([]);
+    localStorage.removeItem("orders");
+  };
+
+  const deleteOrder = (order) => {
+    if (!window.confirm("Annullare lo scontrino N." + String(order.id).padStart(4,"0") + "?")) return;
+    if (db && order._key) {
+      db.ref("torneo/orders/" + order._key).remove();
+    } else {
+      const no = orders.filter(o => o.id !== order.id);
+      setOrders(no);
+      localStorage.setItem("orders", JSON.stringify(no));
+    }
+  };
+
+  const editOrder = (order) => {
+    if (!window.confirm("Modificare lo scontrino N." + String(order.id).padStart(4,"0") + "? Verrà riaperto nel carrello e lo scontrino originale sarà eliminato.")) return;
+    // Load items into cart
+    setCart(order.items.map(i => ({...i})));
+    setDisc(order.disc || 0);
+    setTable(order.table || "");
+    setPay(order.pay || "contanti");
+    // Delete original
+    if (db && order._key) {
+      db.ref("torneo/orders/" + order._key).remove();
+    } else {
+      const no = orders.filter(o => o.id !== order.id);
+      setOrders(no);
+      localStorage.setItem("orders", JSON.stringify(no));
+    }
+    setView(isMobile ? "carrello" : "cassa");
+  };
+
+  const filtered = MENU.filter(i=>(cat==="Tutti"||i.cat===cat)&&i.name.toLowerCase().includes(search.toLowerCase()));
+
+  const today    = new Date().toLocaleDateString("it-IT");
+  const todayO   = orders.filter(o=>o.date.startsWith(today));
+  const todayRev = todayO.reduce((s,o)=>s+o.total,0);
+  const totalRev = orders.reduce((s,o)=>s+o.total,0);
+  const payBreak = orders.reduce((a,o)=>{a[o.pay]=(a[o.pay]||0)+o.total;return a;},{});
+  const topItems = Object.entries(orders.flatMap(o=>o.items).reduce((a,i)=>{a[i.name]=(a[i.name]||0)+i.qty;return a;},{})).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // --- Foglio 1: Riepilogo ---
+    const riepilogo = [
+      ["REPORT TORNEO DEL PRETE"],
+      ["Generato il", new Date().toLocaleString("it-IT")],
+      [],
+      ["RIEPILOGO"],
+      ["Incasso Oggi (€)",    Number(todayRev.toFixed(2))],
+      ["Incasso Totale (€)",  Number(totalRev.toFixed(2))],
+      ["Scontrini Oggi",      todayO.length],
+      ["Scontrini Totali",    orders.length],
+      ["Scontrino Medio (€)", orders.length ? Number((totalRev/orders.length).toFixed(2)) : 0],
+      [],
+      ["METODI DI PAGAMENTO"],
+      ["Metodo", "Totale (€)"],
+      ...Object.entries(payBreak).map(([m,v]) => [m, Number(v.toFixed(2))]),
+      [],
+      ["TOP PRODOTTI"],
+      ["Prodotto", "Quantità venduta"],
+      ...topItems.map(([name,qty]) => [name, qty]),
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(riepilogo);
+    ws1["!cols"] = [{wch: 28}, {wch: 22}];
+    XLSX.utils.book_append_sheet(wb, ws1, "Riepilogo");
+
+    // --- Foglio 2: Scontrini ---
+    const scontrini = [
+      ["N.", "Data", "Tavolo/Cliente", "Centro", "Articoli", "Pagamento", "Sconto %", "Totale (€)"]
+    ];
+    [...orders].reverse().forEach(o => {
+      scontrini.push([
+        String(o.id).padStart(4,"0"),
+        o.date,
+        o.table || "-",
+        o.centro || "-",
+        o.items.map(i => i.name + " x" + i.qty).join(" | "),
+        o.pay,
+        o.disc || 0,
+        Number(o.total.toFixed(2)),
+      ]);
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet(scontrini);
+    ws2["!cols"] = [{wch:8},{wch:20},{wch:18},{wch:12},{wch:50},{wch:12},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws2, "Scontrini");
+
+    // --- Foglio 3: Articoli per scontrino ---
+    const articoli = [
+      ["N. Scontrino", "Data", "Centro", "Articolo", "Prezzo Unit. (€)", "Quantità", "Subtotale (€)"]
+    ];
+    [...orders].reverse().forEach(o => {
+      o.items.forEach(i => {
+        articoli.push([
+          String(o.id).padStart(4,"0"),
+          o.date,
+          o.centro || "-",
+          i.name,
+          Number(i.price.toFixed(2)),
+          i.qty,
+          Number((i.price*i.qty).toFixed(2)),
+        ]);
+      });
+    });
+    const ws3 = XLSX.utils.aoa_to_sheet(articoli);
+    ws3["!cols"] = [{wch:14},{wch:20},{wch:12},{wch:30},{wch:14},{wch:10},{wch:14}];
+    XLSX.utils.book_append_sheet(wb, ws3, "Articoli");
+
+    // Download .xlsx
+    const dateStr = today.replace(/\//g, "-");
+    XLSX.writeFile(wb, "report_torneo_" + dateStr + ".xlsx");
+  };
+
+  /* ── MOBILE LAYOUT ── */
+  if (isMobile) return (
+    <div style={{height:"100vh",display:"flex",flexDirection:"column",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",overflow:"hidden"}}>
+
+      {/* TOP BAR */}
+      <div style={{background:"#1e293b",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #334155",flexShrink:0}}>
+        <div style={{display:"flex",flexDirection:"column"}}>
+          <div style={{fontSize:16,fontWeight:800,color:"#f8fafc",letterSpacing:"-0.3px"}}>⚽ TDP Cassa</div>
+          <div style={{fontSize:10,color:syncStatus==="connected"?"#4ade80":syncStatus==="connecting"?"#fbbf24":"#64748b"}}>
+            {syncStatus==="connected"?"🟢 Sincronizzato":syncStatus==="connecting"?"🟡 Connessione...":syncStatus==="error"?"🔴 Errore sync":"⚫ Solo locale"}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {[["cassa","🧾"],["report","📊"],["impostazioni","⚙️"]].map(([v,ic])=>(
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#dc2626":"#334155",border:"none",color:"#fff",width:38,height:38,borderRadius:10,fontSize:18,cursor:"pointer"}}>
+              {ic}
+            </button>
+          ))}
+          <button onClick={toggleTheme} title="Cambia tema" style={{background:"#334155",border:"none",color:"#fff",width:38,height:38,borderRadius:10,fontSize:18,cursor:"pointer"}}>
+            {theme==="dark"?"☀️":"🌙"}
+          </button>
+        </div>
+      </div>
+
+      {/* FLASH */}
+      {flash && <div style={{position:"fixed",top:60,left:"50%",transform:"translateX(-50%)",background:"#22c55e",color:"#fff",padding:"8px 20px",borderRadius:20,fontWeight:900,zIndex:999,fontSize:14,whiteSpace:"nowrap"}}>
+        {flash}
+      </div>}
+
+      {/* ── CASSA VIEW MOBILE ── */}
+      {(view==="cassa"||view==="carrello") && (
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+          {/* Tab switcher: Menù / Carrello */}
+          <div style={{display:"flex",background:"#0f172a",borderBottom:"1px solid #334155",flexShrink:0}}>
+            <button onClick={()=>setView("cassa")} style={{flex:1,padding:"10px",background:view==="cassa"?"#1e293b":"transparent",border:"none",color:view==="cassa"?"#f8fafc":"#64748b",fontFamily:"inherit",fontSize:13,fontWeight:700,borderBottom:view==="cassa"?"2px solid #dc2626":"2px solid transparent",cursor:"pointer"}}>
+              🍽 Menù
+            </button>
+            <button onClick={()=>setView("carrello")} style={{flex:1,padding:"10px",background:view==="carrello"?"#1e293b":"transparent",border:"none",color:view==="carrello"?"#f8fafc":"#64748b",fontFamily:"inherit",fontSize:13,fontWeight:700,borderBottom:view==="carrello"?"2px solid #dc2626":"2px solid transparent",cursor:"pointer",position:"relative"}}>
+              🛒 Carrello {cartCount>0&&<span style={{background:"#dc2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:11,marginLeft:4}}>{cartCount}</span>}
+            </button>
+          </div>
+
+          {/* MENÙ TAB */}
+          {view==="cassa" && (
+            <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+              {/* Search */}
+              <div style={{padding:"8px 10px",flexShrink:0}}>
+                <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cerca..." style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
+              </div>
+              {/* Category pills */}
+              <div style={{display:"flex",gap:6,padding:"0 10px 8px",overflowX:"auto",flexShrink:0,scrollbarWidth:"none"}}>
+                {CATS.map(c=>(
+                  <button key={c} onClick={()=>setCat(c)} style={{background:cat===c?"#dc2626":"#1e293b",border:`1px solid ${cat===c?"#dc2626":"#334155"}`,color:cat===c?"#fff":"#94a3b8",padding:"7px 14px",borderRadius:20,cursor:"pointer",fontSize:12,fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+              {/* Product grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,padding:"0 10px 10px",overflowY:"auto",flex:1}}>
+                {filtered.map(item=>(
+                  <button key={item.id} onClick={()=>addItem(item)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:"14px 8px",cursor:"pointer",textAlign:"center",color:"#e2e8f0",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:4,minHeight:72,active:{background:"#dc2626"}}}>
+                    <div style={{fontSize:12,fontWeight:700,lineHeight:1.25,color:"#f1f5f9"}}>{item.name}</div>
+                    <div style={{fontSize:16,color:"#f87171",fontWeight:900,marginTop:3}}>{fmt(item.price)}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* CARRELLO TAB */}
+          {view==="carrello" && (
+            <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+              {/* Table input */}
+              <div style={{padding:"8px 10px",flexShrink:0}}>
+                <input value={table} onChange={e=>setTable(e.target.value)} placeholder="👤 Tavolo / Cliente (opz.)" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
+              </div>
+              {/* Cart items */}
+              <div style={{flex:1,overflowY:"auto",padding:"0 10px"}}>
+                {!cart.length && (
+                  <div style={{textAlign:"center",color:"#475569",padding:"40px 0",fontSize:15}}>
+                    Nessun articolo<br/><span style={{fontSize:36}}>🛒</span>
+                  </div>
+                )}
+                {cart.map(item=>(
+                  <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #1e293b"}}>
+                    <div style={{flex:1,fontSize:13,color:"#e2e8f0",fontWeight:600}}>{item.name}</div>
+                    <button onClick={()=>remItem(item.id)} style={{background:"#334155",border:"none",color:"#e2e8f0",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:18,fontFamily:"inherit"}}>−</button>
+                    <span style={{width:24,textAlign:"center",fontWeight:900,fontSize:16}}>{item.qty}</span>
+                    <button onClick={()=>addItem(item)} style={{background:"#334155",border:"none",color:"#e2e8f0",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:18,fontFamily:"inherit"}}>+</button>
+                    <div style={{fontSize:14,fontWeight:900,color:"#f87171",minWidth:55,textAlign:"right"}}>{fmt(item.price*item.qty)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer con totale e pagamento */}
+              {cart.length>0 && (
+                <div style={{background:"#131f30",borderTop:"1px solid #334155",padding:"12px 14px",flexShrink:0}}>
+                  {/* Sconto */}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                    <span style={{color:"#94a3b8",fontSize:13}}>Sconto %</span>
+                    <input type="number" min="0" max="100" value={disc} onChange={e=>setDisc(Math.min(100,Math.max(0,+e.target.value)))} style={{background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"4px 8px",borderRadius:6,width:64,textAlign:"center",fontSize:14,fontFamily:"inherit",outline:"none"}} />
+                  </div>
+                  {disc>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:"#94a3b8",marginBottom:4}}><span>Subtotale</span><span>{fmt(subtotal)}</span></div>}
+                  {disc>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:"#f87171",marginBottom:4}}><span>Sconto -{disc}%</span><span>−{fmt(discAmt)}</span></div>}
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:22,fontWeight:900,color:"#4ade80",marginBottom:12}}>
+                    <span>TOTALE</span><span>{fmt(total)}</span>
+                  </div>
+                  {/* Payment methods */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                    {[["contanti","💵"],["carta","💳"],["pos","📱"],["ticket","🎫"]].map(([m,ic])=>(
+                      <button key={m} onClick={()=>setPay(m)} style={{background:pay===m?"#991b1b":"#1e293b",border:`2px solid ${pay===m?"#dc2626":"#334155"}`,color:pay===m?"#fff":"#94a3b8",padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700,textTransform:"capitalize"}}>
+                        {ic} {m}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Actions */}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={clearCart} style={{flex:1,background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+                      🗑 Cancella
+                    </button>
+                    <button onClick={checkout} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:900}}>
+                      ✅ Incassa {fmt(total)}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SCONTRINO MOBILE ── */}
+      {view==="scontrino" && lastR && (()=>{
+        const receipts = Array.isArray(lastR) ? lastR : [lastR];
+        const r = receipts[rcptIdx];
+        const isLast = rcptIdx >= receipts.length - 1;
+        const hasMultiple = receipts.length > 1;
+        return (
+        <div style={{flex:1,overflowY:"auto",padding:16,display:"flex",flexDirection:"column",alignItems:"center"}}>
+          {hasMultiple && (
+            <div style={{width:"100%",maxWidth:320,marginBottom:12,display:"flex",gap:6}}>
+              {receipts.map((rec,i)=>(
+                <button key={i} onClick={()=>setRcptIdx(i)} style={{flex:1,padding:"8px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,background:rcptIdx===i?"#dc2626":"#334155",color:"#fff"}}>
+                  {rec.centro}
+                </button>
+              ))}
+            </div>
+          )}
+          <div id="receipt-print" style={{background:"#fff",color:"#000",width:"100%",maxWidth:320,padding:20,borderRadius:8,fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,fontWeight:700}}>
+            <div style={{textAlign:"center",fontSize:16,fontWeight:900}}>TORNEO DEL PRETE</div>
+            {r.centro && <div style={{textAlign:"center",fontSize:13,fontWeight:900,letterSpacing:2,marginTop:2}}>{r.centro}</div>}
+            <div style={{textAlign:"center",fontSize:11}}>Comune di Fabbrico</div>
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            <div style={{textAlign:"center",fontSize:11}}>N. {String(r.id).padStart(4,"0")} — {r.date}</div>
+            {r.table&&<div style={{textAlign:"center",fontSize:11}}>Tavolo: {r.table}</div>}
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",borderBottom:"1px solid #eee",paddingBottom:4,marginBottom:4,fontSize:11}}>
+              <span>Descrizione</span><span>Qt</span><span>Imp.</span>
+            </div>
+            {r.items.map((i,idx)=>{
+              const name=i.name.length>18?i.name.substring(0,17)+".":i.name.padEnd(18," ");
+              const qty=("x"+i.qty).padStart(3," ");
+              const price=fmt(i.price*i.qty).padStart(7," ");
+              return <div key={idx} style={{fontSize:11,padding:"1px 0",fontFamily:"'JetBrains Mono','Courier New',monospace",whiteSpace:"pre"}}>{name}{qty}{price}</div>;
+            })}
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            {r.disc>0&&<>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span>Subtotale</span><span>{fmt(r.subtotal)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span>Sconto {r.disc}%</span><span>-{fmt(r.discAmt)}</span></div>
+            </>}
+            <div style={{display:"flex",justifyContent:"space-between",fontWeight:900,fontSize:16,borderTop:"2px solid #111",marginTop:4,paddingTop:4}}>
+              <span>TOTALE</span><span>{fmt(r.total)}</span>
+            </div>
+            <div style={{textAlign:"center",fontSize:11,marginTop:4}}>{r.pay.toUpperCase()}</div>
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            <div style={{textAlign:"center",fontSize:11}}>Grazie per la visita! 😊</div>
+            <div style={{textAlign:"center",fontSize:11}}>--- Arrivederci ---</div>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:16,width:"100%",maxWidth:320}}>
+            <button onClick={()=>window.print()} style={{flex:1,background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>🖨 Stampa</button>
+            {!isLast
+              ? <button onClick={()=>setRcptIdx(rcptIdx+1)} style={{flex:2,background:"#dc2626",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:900}}>Prossimo →</button>
+              : <button onClick={()=>setView("cassa")} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:900}}>➕ Nuovo Ordine</button>
+            }
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* ── REPORT MOBILE ── */}
+      {view==="report" && (
+        <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontSize:18,fontWeight:900,color:"#f8fafc"}}>📊 Report</div>
+            <button onClick={exportExcel} style={{background:"#15803d",border:"none",color:"#fff",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700}}>📥 Excel</button>
+          </div>
+          {/* Stat cards */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            {[["Oggi",fmt(todayRev),todayO.length+" scontrini"],["Totale",fmt(totalRev),orders.length+" scontrini"],["Media",orders.length?fmt(totalRev/orders.length):"€0.00","per scontrino"]].map(([l,v,s])=>(
+              <div key={l} style={{background:"#1e293b",borderRadius:10,padding:"12px 14px",border:"1px solid #334155",gridColumn:l==="Media"?"span 2":"auto"}}>
+                <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{l}</div>
+                <div style={{fontSize:22,fontWeight:900,color:"#4ade80"}}>{v}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{s}</div>
+              </div>
+            ))}
+          </div>
+          {/* Top prodotti */}
+          <div style={{background:"#1e293b",borderRadius:10,padding:"14px",border:"1px solid #334155",marginBottom:10}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10}}>🏆 Top Prodotti</div>
+            {!topItems.length&&<div style={{color:"#64748b",fontSize:13}}>Nessun dato</div>}
+            {topItems.map(([name,qty],i)=>(
+              <div key={name} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #334155"}}>
+                <span style={{color:"#64748b",fontSize:12,width:20}}>#{i+1}</span>
+                <span style={{flex:1,fontSize:13}}>{name}</span>
+                <span style={{fontWeight:700,color:"#fbbf24",fontSize:13}}>{qty} pz</span>
+              </div>
+            ))}
+          </div>
+          {/* Ultimi scontrini */}
+          <div style={{background:"#1e293b",borderRadius:10,padding:"14px",border:"1px solid #334155",marginBottom:10}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10}}>🧾 Ultimi Scontrini</div>
+            {!orders.length&&<div style={{color:"#64748b",fontSize:13}}>Nessun ordine</div>}
+            {[...orders].reverse().slice(0,15).map(o=>(
+              <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid #334155"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:"#64748b",fontSize:11}}>{String(o.id).padStart(4,"0")}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:"#e2e8f0"}}>{o.date}</div>
+                    <div style={{fontSize:11,color:"#64748b",textTransform:"capitalize"}}>{o.pay} {o.table?"· "+o.table:""}</div>
+                  </div>
+                  <span style={{fontWeight:900,color:"#4ade80",fontSize:14}}>{fmt(o.total)}</span>
+                </div>
+                <div style={{display:"flex",gap:6,marginTop:6}}>
+                  <button onClick={()=>editOrder(o)} style={{flex:1,background:"#1d4ed8",border:"none",color:"#fff",padding:"6px",borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:700}}>✏️ Modifica</button>
+                  <button onClick={()=>deleteOrder(o)} style={{flex:1,background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"6px",borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:700}}>🗑 Annulla</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{textAlign:"center",paddingBottom:20}}>
+            <button onClick={deleteAllOrders} style={{background:"#7f1d1d",border:"1px solid #991b1b",color:"#fca5a5",padding:"10px 20px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+              🗑 Azzera Dati
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── IMPOSTAZIONI MOBILE ── */}
+      {view==="impostazioni" && (
+        <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
+          <div style={{fontSize:18,fontWeight:900,color:"#f8fafc",marginBottom:14}}>⚙️ Stampante</div>
+          <div style={{background:"#1e293b",borderRadius:10,padding:14,border:"1px solid #334155",marginBottom:10}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10}}>🖨️ Rotolo Termico 80mm</div>
+            {[["1️⃣","Collega la stampante termica via USB"],["2️⃣","Installa i driver dal sito del produttore"],["3️⃣","Impostala come stampante predefinita in Windows"],["4️⃣","Clicca Stampa → seleziona la termica"],["5️⃣","Imposta margini = Nessuno, scala = 100%"],["6️⃣","Salva come impostazioni predefinite"]].map(([n,t])=>(
+              <div key={n} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #334155"}}>
+                <span style={{fontSize:16,flexShrink:0}}>{n}</span>
+                <span style={{fontSize:12,color:"#cbd5e1",lineHeight:1.5}}>{t}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setView("scontrino")} style={{width:"100%",background:"#1d4ed8",border:"1px solid #3b82f6",color:"#fff",padding:14,borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+            🖨️ Vai allo Scontrino di Prova
+          </button>
+          <FirebaseConfig syncStatus={syncStatus} />
+        </div>
+      )}
+    </div>
+  );
+
+  /* ── DESKTOP LAYOUT (invariato) ── */
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",display:"flex",flexDirection:"column"}}>
+      <nav style={{background:"#1e293b",padding:"12px 24px",display:"flex",alignItems:"center",gap:16,borderBottom:"1px solid #334155",flexWrap:"wrap"}}>
+        <div style={{fontSize:19,fontWeight:800,color:"#f8fafc",marginRight:8,letterSpacing:"-0.4px"}}>⚽ Torneo del Prete</div>
+        <div style={{display:"flex",gap:8}}>
+          {[["cassa","🧾 Cassa"],["report","📊 Report"],["impostazioni","⚙️ Stampante"]].map(([v,label])=>(
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#dc2626":"transparent",border:`1px solid ${view===v?"#dc2626":"#334155"}`,color:view===v?"#fff":"#94a3b8",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:12}}>
+          <span style={{color:"#64748b",fontSize:12}}>{new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})}</span>
+          <button onClick={toggleTheme} title="Cambia tema" style={{background:"#334155",border:"none",color:"#fff",width:36,height:36,borderRadius:8,fontSize:16,cursor:"pointer"}}>
+            {theme==="dark"?"☀️":"🌙"}
+          </button>
+        </div>
+      </nav>
+
+      {flash&&<div style={{position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",background:"#22c55e",color:"#fff",padding:"8px 24px",borderRadius:20,fontWeight:700,zIndex:999,fontSize:14,pointerEvents:"none"}}>{flash}</div>}
+
+      {view==="cassa"&&(
+        <div style={{display:"flex",flex:1,height:"calc(100vh - 57px)",overflow:"hidden"}}>
+          <div style={{flex:1,display:"flex",flexDirection:"column",padding:16,overflow:"hidden",borderRight:"1px solid #1e293b",gap:10}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cerca prodotto..." style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"8px 14px",borderRadius:8,fontSize:14,fontFamily:"inherit",outline:"none"}} />
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {CATS.map(c=><button key={c} onClick={()=>setCat(c)} style={{background:cat===c?"#dc2626":"#1e293b",border:`1px solid ${cat===c?"#dc2626":"#334155"}`,color:cat===c?"#fff":"#94a3b8",padding:"4px 12px",borderRadius:20,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>{c}</button>)}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,overflowY:"auto",flex:1}}>
+              {filtered.map(item=>(
+                <button key={item.id} onClick={()=>addItem(item)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:10,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#e2e8f0",fontFamily:"inherit"}}>
+                  <div style={{fontSize:12,fontWeight:600,marginBottom:6,lineHeight:1.3}}>{item.name}</div>
+                  <div style={{fontSize:15,color:"#f87171",fontWeight:800}}>{fmt(item.price)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{width:340,display:"flex",flexDirection:"column",background:"#131f30"}}>
+            <div style={{padding:"14px 16px 10px",borderBottom:"1px solid #1e293b"}}>
+              <span style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>🛒 Ordine</span>
+              <input value={table} onChange={e=>setTable(e.target.value)} placeholder="Tavolo / Cliente" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"6px 10px",borderRadius:6,fontSize:13,fontFamily:"inherit",outline:"none",marginTop:8}} />
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:"8px 12px"}}>
+              {!cart.length&&<div style={{textAlign:"center",color:"#475569",padding:"40px 0",fontSize:15}}>Nessun articolo<br/><span style={{fontSize:32}}>🛒</span></div>}
+              {cart.map(item=>(
+                <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid #1e293b"}}>
+                  <div style={{flex:1,fontSize:12,color:"#cbd5e1",lineHeight:1.3}}>{item.name}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <button onClick={()=>remItem(item.id)} style={{background:"#334155",border:"none",color:"#e2e8f0",width:26,height:26,borderRadius:6,cursor:"pointer",fontSize:16,fontFamily:"inherit"}}>−</button>
+                    <span style={{width:22,textAlign:"center",fontWeight:700,fontSize:14}}>{item.qty}</span>
+                    <button onClick={()=>addItem(item)} style={{background:"#334155",border:"none",color:"#e2e8f0",width:26,height:26,borderRadius:6,cursor:"pointer",fontSize:16,fontFamily:"inherit"}}>+</button>
+                  </div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#f87171",minWidth:60,textAlign:"right"}}>{fmt(item.price*item.qty)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{padding:"12px 14px",borderTop:"1px solid #1e293b"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{color:"#94a3b8"}}>Sconto %</span>
+                <input type="number" min="0" max="100" value={disc} onChange={e=>setDisc(Math.min(100,Math.max(0,+e.target.value)))} style={{background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"4px 8px",borderRadius:6,width:60,textAlign:"center",fontSize:14,fontFamily:"inherit",outline:"none"}} />
+              </div>
+              {disc>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:14}}><span style={{color:"#94a3b8"}}>Subtotale</span><span>{fmt(subtotal)}</span></div>}
+              {disc>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:14}}><span style={{color:"#f87171"}}>Sconto -{disc}%</span><span style={{color:"#f87171"}}>−{fmt(discAmt)}</span></div>}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:22,fontWeight:900,color:"#4ade80",margin:"8px 0"}}><span>TOTALE</span><span>{fmt(total)}</span></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,margin:"10px 0"}}>
+                {[["contanti","💵"],["carta","💳"],["pos","📱"],["ticket","🎫"]].map(([m,ic])=>(
+                  <button key={m} onClick={()=>setPay(m)} style={{background:pay===m?"#991b1b":"#1e293b",border:`1px solid ${pay===m?"#dc2626":"#334155"}`,color:pay===m?"#fff":"#94a3b8",padding:"7px 4px",borderRadius:8,cursor:"pointer",fontSize:12,fontFamily:"inherit",textTransform:"capitalize"}}>{ic} {m}</button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={clearCart} style={{flex:1,background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>🗑 Cancella</button>
+                <button onClick={checkout} disabled={!cart.length} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700}}>✅ Incassa {fmt(total)}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view==="scontrino"&&lastR&&(()=>{
+        const receipts = Array.isArray(lastR) ? lastR : [lastR];
+        const r = receipts[rcptIdx];
+        const isLast = rcptIdx >= receipts.length - 1;
+        const hasMultiple = receipts.length > 1;
+        return (
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:32}}>
+          {hasMultiple && (
+            <div style={{display:"flex",gap:8,marginBottom:16}}>
+              {receipts.map((rec,i)=>(
+                <button key={i} onClick={()=>setRcptIdx(i)} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700,background:rcptIdx===i?"#dc2626":"#334155",color:"#fff"}}>
+                  {rec.centro}
+                </button>
+              ))}
+            </div>
+          )}
+          <div id="receipt-print" style={{background:"#fff",color:"#000",width:280,padding:20,borderRadius:4,fontFamily:"'JetBrains Mono','Courier New',monospace",boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontSize:12,fontWeight:700}}>
+            <div style={{textAlign:"center",fontSize:16,fontWeight:900}}>TORNEO DEL PRETE</div>
+            {r.centro && <div style={{textAlign:"center",fontSize:13,fontWeight:900,letterSpacing:2,marginTop:2}}>{r.centro}</div>}
+            <div style={{textAlign:"center",fontSize:11}}>Comune di Fabbrico</div>
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            <div style={{textAlign:"center",fontSize:11}}>N. {String(r.id).padStart(4,"0")} — {r.date}</div>
+            {r.table&&<div style={{textAlign:"center",fontSize:11}}>Tavolo: {r.table}</div>}
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",borderBottom:"1px solid #eee",paddingBottom:4,marginBottom:4,fontSize:11}}><span>Descrizione</span><span>Qt</span><span>Imp.</span></div>
+            {r.items.map((i,idx)=>{
+              const name=i.name.length>18?i.name.substring(0,17)+".":i.name.padEnd(18," ");
+              return <div key={idx} style={{fontSize:11,padding:"1px 0",fontFamily:"'JetBrains Mono','Courier New',monospace",whiteSpace:"pre"}}>{name}{"x"+i.qty}{fmt(i.price*i.qty).padStart(8," ")}</div>;
+            })}
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            {r.disc>0&&<><div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span>Subtotale</span><span>{fmt(r.subtotal)}</span></div><div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span>Sconto {r.disc}%</span><span>-{fmt(r.discAmt)}</span></div></>}
+            <div style={{display:"flex",justifyContent:"space-between",fontWeight:900,fontSize:16,borderTop:"2px solid #111",marginTop:4,paddingTop:4}}><span>TOTALE</span><span>{fmt(r.total)}</span></div>
+            <div style={{textAlign:"center",fontSize:11,marginTop:4}}>{r.pay.toUpperCase()}</div>
+            <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
+            <div style={{textAlign:"center",fontSize:11}}>Grazie per la visita! 😊</div>
+            <div style={{textAlign:"center",fontSize:11}}>--- Arrivederci ---</div>
+          </div>
+          <div style={{display:"flex",gap:12,marginTop:24}}>
+            <button onClick={()=>window.print()} style={{background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>🖨 Stampa</button>
+            {!isLast
+              ? <button onClick={()=>setRcptIdx(rcptIdx+1)} style={{background:"#dc2626",border:"none",color:"#fff",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>Prossimo → {receipts[rcptIdx+1].centro}</button>
+              : <button onClick={()=>setView("cassa")} style={{background:"#15803d",border:"none",color:"#fff",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>➕ Nuovo Ordine</button>
+            }
+          </div>
+        </div>
+        );
+      })()}
+
+      {view==="report"&&(
+        <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+            <h2 style={{fontSize:24,fontWeight:900,color:"#f8fafc"}}>📊 Report & Statistiche</h2>
+            <button onClick={exportExcel} style={{background:"#15803d",border:"1px solid #16a34a",color:"#fff",padding:"10px 20px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>📥 Scarica Excel</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,marginBottom:24}}>
+            {[["Incasso Oggi",fmt(todayRev),todayO.length+" scontrini"],["Incasso Totale",fmt(totalRev),orders.length+" scontrini totali"],["Scontrino Medio",orders.length?fmt(totalRev/orders.length):"€0.00","media"]].map(([l,v,s])=>(
+              <div key={l} style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+                <div style={{fontSize:12,color:"#64748b",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>{l}</div>
+                <div style={{fontSize:28,fontWeight:900,color:"#4ade80"}}>{v}</div>
+                <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{s}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+            <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+              <h3 style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#f8fafc"}}>💳 Metodi di Pagamento</h3>
+              {!Object.keys(payBreak).length&&<p style={{color:"#64748b"}}>Nessun dato</p>}
+              {Object.entries(payBreak).map(([m,v])=>(
+                <div key={m} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                  <span style={{textTransform:"capitalize",minWidth:70}}>{m}</span>
+                  <div style={{flex:1,height:8,background:"#334155",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:"#dc2626",borderRadius:4,width:`${(v/totalRev*100).toFixed(0)}%`,minWidth:4}}/></div>
+                  <span style={{fontWeight:700,color:"#f87171",minWidth:70,textAlign:"right"}}>{fmt(v)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155"}}>
+              <h3 style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#f8fafc"}}>🏆 Top 5 Prodotti</h3>
+              {!topItems.length&&<p style={{color:"#64748b"}}>Nessun dato</p>}
+              {topItems.map(([name,qty],i)=>(
+                <div key={name} style={{display:"flex",gap:10,padding:"6px 0",borderBottom:"1px solid #334155",alignItems:"center"}}>
+                  <span style={{color:"#64748b",width:24}}>#{i+1}</span>
+                  <span style={{flex:1}}>{name}</span>
+                  <span style={{fontWeight:700,color:"#fbbf24"}}>{qty} pz</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155",marginBottom:16}}>
+            <h3 style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#f8fafc"}}>🧾 Ultimi Scontrini</h3>
+            {!orders.length&&<p style={{color:"#64748b"}}>Nessun ordine</p>}
+            <div style={{overflowX:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:"50px 1fr 80px 40px 90px 80px 80px",gap:8,padding:"8px 0",color:"#64748b",borderBottom:"1px solid #334155",fontSize:11,textTransform:"uppercase"}}>
+                <span>#</span><span>Data</span><span>Tavolo</span><span>Art.</span><span>Pagamento</span><span>Totale</span><span>Azioni</span>
+              </div>
+              {[...orders].reverse().slice(0,20).map(o=>(
+                <div key={o.id} style={{display:"grid",gridTemplateColumns:"50px 1fr 80px 40px 90px 80px 80px",gap:8,padding:"8px 0",borderBottom:"1px solid #1e293b",alignItems:"center",fontSize:13}}>
+                  <span style={{color:"#64748b"}}>{String(o.id).padStart(4,"0")}</span>
+                  <span style={{fontSize:12,color:"#94a3b8"}}>{o.date}</span>
+                  <span>{o.table||"—"}</span>
+                  <span>{o.items.reduce((s,i)=>s+i.qty,0)}</span>
+                  <span style={{textTransform:"capitalize",color:"#38bdf8"}}>{o.pay}</span>
+                  <span style={{fontWeight:700,color:"#4ade80"}}>{fmt(o.total)}</span>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>editOrder(o)} title="Modifica" style={{background:"#1d4ed8",border:"none",color:"#fff",padding:"4px 8px",borderRadius:6,cursor:"pointer",fontSize:12}}>✏️</button>
+                    <button onClick={()=>deleteOrder(o)} title="Annulla" style={{background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"4px 8px",borderRadius:6,cursor:"pointer",fontSize:12}}>🗑</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{textAlign:"center",marginTop:16}}>
+            <button onClick={deleteAllOrders} style={{background:"#7f1d1d",border:"1px solid #991b1b",color:"#fca5a5",padding:"8px 20px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>🗑 Azzera Tutti i Dati</button>
+          </div>
+        </div>
+      )}
+
+      {view==="impostazioni"&&(
+        <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
+          <h2 style={{fontSize:24,fontWeight:900,marginBottom:24,color:"#f8fafc"}}>⚙️ Impostazioni Stampante</h2>
+          <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155",marginBottom:16}}>
+            <h3 style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#f8fafc"}}>🖨️ Rotolo Termico 80mm</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {[["1️⃣","Collega la stampante termica al PC via USB"],["2️⃣","Installa i driver dal sito del produttore"],["3️⃣","Impostala come stampante predefinita in Windows"],["4️⃣","Clicca Stampa → seleziona la stampante termica"],["5️⃣","Imposta: Margini = Nessuno · Scala = 100%"],["6️⃣","Salva queste impostazioni come predefinite"]].map(([n,t])=>(
+                <div key={n} style={{display:"flex",gap:14,background:"#0f172a",borderRadius:8,padding:"12px 16px",alignItems:"flex-start"}}>
+                  <span style={{fontSize:18,flexShrink:0}}>{n}</span>
+                  <span style={{fontSize:13,color:"#cbd5e1",lineHeight:1.6}}>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button onClick={()=>setView("scontrino")} style={{background:"#1d4ed8",border:"1px solid #3b82f6",color:"#fff",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>🖨️ Scontrino di Prova</button>
+          <FirebaseConfig syncStatus={syncStatus} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FirebaseConfig({ syncStatus }) {
+  const fields = [
+    ["apiKey","API Key"],
+    ["authDomain","Auth Domain"],
+    ["databaseURL","Database URL"],
+    ["projectId","Project ID"],
+    ["storageBucket","Storage Bucket"],
+    ["messagingSenderId","Messaging Sender ID"],
+    ["appId","App ID"],
+  ];
+  const [vals, setVals] = React.useState(() => {
+    const obj = {};
+    fields.forEach(([k])=>{ obj[k]=localStorage.getItem("fb_"+k)||""; });
+    return obj;
+  });
+  const [saved, setSaved] = React.useState(false);
+
+  const save = () => {
+    fields.forEach(([k])=>{ localStorage.setItem("fb_"+k, vals[k]); });
+    setSaved(true);
+    setTimeout(()=>{ window.location.reload(); }, 800);
+  };
+  const reset = () => {
+    fields.forEach(([k])=>{ localStorage.removeItem("fb_"+k); });
+    window.location.reload();
+  };
+
+  const isConfigured = !!vals.databaseURL;
+
+  return (
+    <div style={{background:"#1e293b",borderRadius:12,padding:20,border:"1px solid #334155",marginTop:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+        <h3 style={{fontSize:15,fontWeight:700,color:"#f8fafc"}}>☁️ Sincronizzazione Firebase</h3>
+        <span style={{fontSize:12,padding:"4px 10px",borderRadius:20,fontWeight:700,
+          background:syncStatus==="connected"?"#14532d":syncStatus==="connecting"?"#713f12":"#1e293b",
+          color:syncStatus==="connected"?"#4ade80":syncStatus==="connecting"?"#fbbf24":"#64748b",
+          border:"1px solid currentColor"}}>
+          {syncStatus==="connected"?"🟢 Connesso":syncStatus==="connecting"?"🟡 Connessione...":syncStatus==="error"?"🔴 Errore":"⚫ Non configurato"}
+        </span>
+      </div>
+      {!isConfigured && (
+        <div style={{background:"#0f172a",borderRadius:8,padding:12,marginBottom:14,fontSize:12,color:"#94a3b8",lineHeight:1.7}}>
+          <strong style={{color:"#f8fafc"}}>Come configurare (gratis):</strong><br/>
+          1. Vai su <strong style={{color:"#38bdf8"}}>console.firebase.google.com</strong><br/>
+          2. Crea progetto → aggiungi app Web<br/>
+          3. Vai su <em>Realtime Database</em> → Crea database (modalità test)<br/>
+          4. Copia la configurazione e incollala qui sotto<br/>
+          5. Salva → il sito si ricarica e sincronizza su tutti i dispositivi 🎉
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+        {fields.map(([k,label])=>(
+          <div key={k}>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:3,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+            <input value={vals[k]} onChange={e=>setVals(p=>({...p,[k]:e.target.value}))}
+              placeholder={label+"..."}
+              style={{width:"100%",background:"#0f172a",border:"1px solid #334155",color:"#e2e8f0",padding:"8px 12px",borderRadius:6,fontSize:12,fontFamily:"inherit",outline:"none"}} />
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={save} style={{flex:2,background:saved?"#14532d":"#1d4ed8",border:"none",color:"#fff",padding:"10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700}}>
+          {saved?"✅ Salvato! Ricarico...":"💾 Salva e Connetti"}
+        </button>
+        {isConfigured && <button onClick={reset} style={{flex:1,background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+          🔌 Disconnetti
+        </button>}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [authed, setAuthed] = useState(()=>sessionStorage.getItem("tdp_auth")==="1");
+  const [theme, setTheme] = useState(()=>localStorage.getItem("tdp_theme") || "dark");
+
+  useEffect(()=>{
+    document.documentElement.className = theme === "light" ? "light" : "";
+    localStorage.setItem("tdp_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = ()=>setTheme(t=>t==="dark"?"light":"dark");
+  const login = ()=>{sessionStorage.setItem("tdp_auth","1");setAuthed(true);};
+  return authed ? <POS theme={theme} toggleTheme={toggleTheme}/> : <Login onLogin={login}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
