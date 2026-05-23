@@ -135,7 +135,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-const MENU = [
+const DEFAULT_MENU = [
   { id:1,  name:"Panino Salsiccia",         price:6.00,  cat:"🥪 Panini" },
   { id:2,  name:"Hamburger Scottona",        price:8.00,  cat:"🥪 Panini" },
   { id:3,  name:"Panino Cotoletta",          price:5.00,  cat:"🥪 Panini" },
@@ -166,7 +166,9 @@ const MENU = [
   { id:28, name:"Jagermeister",              price:3.00,  cat:"🥃 Shot" },
 ];
 
-const CATS = ["Tutti", ...new Set(MENU.map(i => i.cat))];
+const CIBO_CATEGORIES = ["🥪 Panini","🍟 Fritti","🍕 Extra"];
+const BAR_CATEGORIES  = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
+const ALL_CATEGORIES  = [...CIBO_CATEGORIES, ...BAR_CATEGORIES];
 const fmt = n => "€" + n.toFixed(2);
 let rcptN = parseInt(localStorage.getItem("rcpt_n") || "1");
 
@@ -230,6 +232,36 @@ function POS({ theme, toggleTheme }) {
     ref.on("value", handler, () => setSyncStatus("error"));
     return () => ref.off("value", handler);
   }, []);
+
+  // Menu state (editabile + sincronizzato)
+  const [menu, setMenu] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("menu")||"null");
+      return (saved && saved.length) ? saved : DEFAULT_MENU;
+    } catch { return DEFAULT_MENU; }
+  });
+
+  // Firebase sync per il menu
+  useEffect(() => {
+    if (!db) return;
+    const ref = db.ref("torneo/menu");
+    const handler = snap => {
+      const val = snap.val();
+      if (val && Array.isArray(val) && val.length) {
+        setMenu(val);
+        localStorage.setItem("menu", JSON.stringify(val));
+      }
+    };
+    ref.on("value", handler);
+    return () => ref.off("value", handler);
+  }, []);
+
+  const saveMenu = (newMenu) => {
+    setMenu(newMenu);
+    localStorage.setItem("menu", JSON.stringify(newMenu));
+    if (db) db.ref("torneo/menu").set(newMenu);
+  };
+
   const [search, setSearch] = useState("");
   const [pay, setPay]       = useState("contanti");
   const [disc, setDisc]     = useState(0);
@@ -256,14 +288,12 @@ function POS({ theme, toggleTheme }) {
   const remItem = id => setCart(p=>{const e=p.find(i=>i.id===id);return e.qty===1?p.filter(i=>i.id!==id):p.map(i=>i.id===id?{...i,qty:i.qty-1}:i);});
   const clearCart = ()=>{setCart([]);setDisc(0);setTable("");};
 
-  const CIBO_CATS = ["🥪 Panini","🍟 Fritti","🍕 Extra"];
-  const BAR_CATS  = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
 
   const checkout = () => {
     if (!cart.length) return;
     const now = new Date().toLocaleString("it-IT");
-    const ciboItems = cart.filter(i => CIBO_CATS.includes(i.cat));
-    const barItems  = cart.filter(i => BAR_CATS.includes(i.cat));
+    const ciboItems = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
+    const barItems  = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
     const receipts  = [];
 
     const makeReceipt = (items, centro) => {
@@ -344,7 +374,8 @@ function POS({ theme, toggleTheme }) {
     setView(isMobile ? "carrello" : "cassa");
   };
 
-  const filtered = MENU.filter(i=>(cat==="Tutti"||i.cat===cat)&&i.name.toLowerCase().includes(search.toLowerCase()));
+  const CATS = ["Tutti", ...ALL_CATEGORIES.filter(c => menu.some(i => i.cat === c))];
+  const filtered = menu.filter(i=>(cat==="Tutti"||i.cat===cat)&&i.name.toLowerCase().includes(search.toLowerCase()));
 
   const today    = new Date().toLocaleDateString("it-IT");
   const todayO   = orders.filter(o=>o.date.startsWith(today));
@@ -439,7 +470,7 @@ function POS({ theme, toggleTheme }) {
           </div>
         </div>
         <div style={{display:"flex",gap:6}}>
-          {[["cassa","🧾"],["report","📊"],["impostazioni","⚙️"]].map(([v,ic])=>(
+          {[["cassa","🧾"],["report","📊"],["articoli","🍔"],["impostazioni","⚙️"]].map(([v,ic])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#dc2626":"#334155",border:"none",color:"#fff",width:38,height:38,borderRadius:10,fontSize:18,cursor:"pointer"}}>
               {ic}
             </button>
@@ -674,6 +705,13 @@ function POS({ theme, toggleTheme }) {
         </div>
       )}
 
+      {/* ── ARTICOLI MOBILE ── */}
+      {view==="articoli" && (
+        <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
+          <ArticoliManager menu={menu} saveMenu={saveMenu} isMobile={true} />
+        </div>
+      )}
+
       {/* ── IMPOSTAZIONI MOBILE ── */}
       {view==="impostazioni" && (
         <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
@@ -702,7 +740,7 @@ function POS({ theme, toggleTheme }) {
       <nav style={{background:"#1e293b",padding:"12px 24px",display:"flex",alignItems:"center",gap:16,borderBottom:"1px solid #334155",flexWrap:"wrap"}}>
         <div style={{fontSize:19,fontWeight:800,color:"#f8fafc",marginRight:8,letterSpacing:"-0.4px"}}>⚽ Torneo del Prete</div>
         <div style={{display:"flex",gap:8}}>
-          {[["cassa","🧾 Cassa"],["report","📊 Report"],["impostazioni","⚙️ Stampante"]].map(([v,label])=>(
+          {[["cassa","🧾 Cassa"],["report","📊 Report"],["articoli","🍔 Articoli"],["impostazioni","⚙️ Stampante"]].map(([v,label])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#dc2626":"transparent",border:`1px solid ${view===v?"#dc2626":"#334155"}`,color:view===v?"#fff":"#94a3b8",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>
               {label}
             </button>
@@ -891,6 +929,12 @@ function POS({ theme, toggleTheme }) {
         </div>
       )}
 
+      {view==="articoli"&&(
+        <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
+          <ArticoliManager menu={menu} saveMenu={saveMenu} isMobile={false} />
+        </div>
+      )}
+
       {view==="impostazioni"&&(
         <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
           <h2 style={{fontSize:24,fontWeight:900,marginBottom:24,color:"#f8fafc"}}>⚙️ Impostazioni Stampante</h2>
@@ -909,6 +953,143 @@ function POS({ theme, toggleTheme }) {
           <FirebaseConfig syncStatus={syncStatus} />
         </div>
       )}
+    </div>
+  );
+}
+
+function ArticoliManager({ menu, saveMenu, isMobile }) {
+  const [editing, setEditing] = React.useState(null); // id in modifica
+  const [draft, setDraft] = React.useState({ name:"", price:"", cat:"🥪 Panini" });
+  const [adding, setAdding] = React.useState(false);
+
+  const startAdd = () => {
+    setAdding(true);
+    setEditing(null);
+    setDraft({ name:"", price:"", cat:"🥪 Panini" });
+  };
+  const startEdit = (item) => {
+    setEditing(item.id);
+    setAdding(false);
+    setDraft({ name:item.name, price:String(item.price), cat:item.cat });
+  };
+  const cancel = () => { setEditing(null); setAdding(false); };
+
+  const saveItem = () => {
+    const price = parseFloat(String(draft.price).replace(",","."));
+    if (!draft.name.trim() || isNaN(price) || price < 0) {
+      alert("Inserisci un nome valido e un prezzo corretto.");
+      return;
+    }
+    if (adding) {
+      const newId = Math.max(0, ...menu.map(i=>i.id)) + 1;
+      saveMenu([...menu, { id:newId, name:draft.name.trim(), price, cat:draft.cat }]);
+    } else {
+      saveMenu(menu.map(i => i.id===editing ? {...i, name:draft.name.trim(), price, cat:draft.cat} : i));
+    }
+    cancel();
+  };
+
+  const deleteItem = (item) => {
+    if (!window.confirm("Eliminare \"" + item.name + "\" dal menu?")) return;
+    saveMenu(menu.filter(i => i.id !== item.id));
+  };
+
+  const C = {
+    bg:"#1e293b", border:"#334155", input:"#0f172a",
+    text:"#e2e8f0", muted:"#94a3b8", price:"#f87171",
+  };
+
+  const inputStyle = { background:C.input, border:"1px solid "+C.border, color:C.text, padding:"10px 12px", borderRadius:8, fontSize:14, fontFamily:"inherit", outline:"none", width:"100%", boxSizing:"border-box" };
+
+  const Form = () => (
+    <div style={{background:C.input, borderRadius:10, padding:14, marginBottom:12, border:"1px solid "+C.border}}>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div>
+          <div style={{fontSize:11,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Nome prodotto</div>
+          <input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Es. Panino Salsiccia" style={inputStyle} autoFocus />
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Prezzo €</div>
+            <input value={draft.price} onChange={e=>setDraft({...draft,price:e.target.value})} placeholder="0.00" inputMode="decimal" style={inputStyle} />
+          </div>
+          <div style={{flex:2}}>
+            <div style={{fontSize:11,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Categoria</div>
+            <select value={draft.cat} onChange={e=>setDraft({...draft,cat:e.target.value})} style={{...inputStyle, cursor:"pointer"}}>
+              <optgroup label="🍕 CIBO">
+                {CIBO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
+              <optgroup label="🍺 BAR">
+                {BAR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
+            </select>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          <button onClick={saveItem} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"11px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+            ✅ Salva
+          </button>
+          <button onClick={cancel} style={{flex:1,background:"#334155",border:"none",color:C.text,padding:"11px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
+            Annulla
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Raggruppa per categoria
+  const byCat = {};
+  ALL_CATEGORIES.forEach(c => { byCat[c] = menu.filter(i => i.cat === c); });
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+        <h2 style={{fontSize:isMobile?18:24,fontWeight:800,color:"#f8fafc",letterSpacing:"-0.4px"}}>🍔 Gestione Articoli</h2>
+        {!adding && !editing && (
+          <button onClick={startAdd} style={{background:"#dc2626",border:"none",color:"#fff",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+            ➕ Nuovo Articolo
+          </button>
+        )}
+      </div>
+
+      {adding && <Form />}
+
+      {ALL_CATEGORIES.map(catName => (
+        byCat[catName].length > 0 || true ? (
+          <div key={catName} style={{background:C.bg,borderRadius:12,padding:16,border:"1px solid "+C.border,marginBottom:12}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+              {catName}
+              <span style={{fontSize:11,color:C.muted,fontWeight:400}}>
+                ({CIBO_CATEGORIES.includes(catName) ? "CIBO" : "BAR"})
+              </span>
+            </div>
+            {byCat[catName].length === 0 && (
+              <div style={{color:"#64748b",fontSize:13,padding:"6px 0"}}>Nessun articolo</div>
+            )}
+            {byCat[catName].map(item => (
+              <div key={item.id}>
+                {editing === item.id ? <Form /> : (
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+C.border}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,color:C.text,fontWeight:600}}>{item.name}</div>
+                      <div style={{fontSize:13,color:C.price,fontWeight:700,marginTop:2}}>{fmt(item.price)}</div>
+                    </div>
+                    <button onClick={()=>startEdit(item)} title="Modifica" style={{background:"#1d4ed8",border:"none",color:"#fff",padding:"7px 12px",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:600}}>✏️</button>
+                    <button onClick={()=>deleteItem(item)} title="Elimina" style={{background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"7px 12px",borderRadius:7,cursor:"pointer",fontSize:13}}>🗑</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : null
+      ))}
+
+      <div style={{textAlign:"center",marginTop:8,marginBottom:20}}>
+        <button onClick={()=>{ if(window.confirm("Ripristinare il menu originale del Torneo? Tutte le modifiche andranno perse.")) saveMenu(DEFAULT_MENU); }}
+          style={{background:"transparent",border:"1px solid "+C.border,color:C.muted,padding:"8px 16px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>
+          ↺ Ripristina menu originale
+        </button>
+      </div>
     </div>
   );
 }
