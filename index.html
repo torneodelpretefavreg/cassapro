@@ -209,6 +209,14 @@ function POS({ theme, toggleTheme }) {
   const [orders, setOrders] = useState(() => { try { return JSON.parse(localStorage.getItem("orders")||"[]"); } catch{return[];} });
   const [lastR, setLastR]   = useState(null);
   const [rcptIdx, setRcptIdx] = useState(0);
+  const [autoPrint, setAutoPrint] = useState(false);
+
+  useEffect(() => {
+    if (autoPrint && view === "scontrino" && lastR) {
+      const t = setTimeout(() => { window.print(); setAutoPrint(false); }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [autoPrint, view, lastR, rcptIdx]);
   const [synced, setSynced] = useState(false);
   const [syncStatus, setSyncStatus] = useState("local"); // local | connected | error
 
@@ -424,6 +432,8 @@ function POS({ theme, toggleTheme }) {
     setRcptIdx(0);
     clearCart();
     setView("scontrino");
+    // Stampa automatica dopo un breve delay per dare tempo al render
+    setTimeout(() => { window.print(); }, 600);
   };
 
   // === FUNZIONI COMANDE (Cucina) ===
@@ -779,7 +789,7 @@ function POS({ theme, toggleTheme }) {
           <div style={{display:"flex",gap:10,marginTop:16,width:"100%",maxWidth:320}}>
             <button onClick={()=>window.print()} style={{flex:1,background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>🖨 Stampa</button>
             {!isLast
-              ? <button onClick={()=>setRcptIdx(rcptIdx+1)} style={{flex:2,background:"#dc2626",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:900}}>Prossimo →</button>
+              ? <button onClick={()=>{setRcptIdx(rcptIdx+1);setAutoPrint(true);}} style={{flex:2,background:"#dc2626",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:900}}>Prossimo →</button>
               : <button onClick={()=>setView("cassa")} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:900}}>➕ Nuovo Ordine</button>
             }
           </div>
@@ -1026,7 +1036,7 @@ function POS({ theme, toggleTheme }) {
           <div style={{display:"flex",gap:12,marginTop:24}}>
             <button onClick={()=>window.print()} style={{background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>🖨 Stampa</button>
             {!isLast
-              ? <button onClick={()=>setRcptIdx(rcptIdx+1)} style={{background:"#dc2626",border:"none",color:"#fff",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>Prossimo → {receipts[rcptIdx+1].centro}</button>
+              ? <button onClick={()=>{setRcptIdx(rcptIdx+1);setAutoPrint(true);}} style={{background:"#dc2626",border:"none",color:"#fff",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>Prossimo → {receipts[rcptIdx+1].centro}</button>
               : <button onClick={()=>setView("cassa")} style={{background:"#15803d",border:"none",color:"#fff",padding:"10px 24px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>➕ Nuovo Ordine</button>
             }
           </div>
