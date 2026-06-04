@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>⚽ CassaPro — Torneo del Prete</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -136,7 +136,7 @@
 const { useState, useEffect, useRef } = React;
 
 const DEFAULT_MENU = [
-  { id:1,  name:"Panino Salsiccia",         price:6.00,  cat:"🥪 Panini" },
+  { id:1,  name:"Panino Salsiccia",         price:6.00,  cat:"🥪 Panini", variants:["Cipolla + Peperoni","Solo Cipolla","Solo Peperoni","Solo Salsiccia"] },
   { id:2,  name:"Hamburger Scottona",        price:8.00,  cat:"🥪 Panini" },
   { id:3,  name:"Panino Cotoletta",          price:5.00,  cat:"🥪 Panini" },
   { id:4,  name:"Patatine Fritte",           price:3.00,  cat:"🍟 Fritti" },
@@ -166,9 +166,10 @@ const DEFAULT_MENU = [
   { id:28, name:"Jagermeister",              price:3.00,  cat:"🥃 Shot" },
 ];
 
-const CIBO_CATEGORIES = ["🥪 Panini","🍟 Fritti","🍕 Extra"];
-const BAR_CATEGORIES  = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
-const ALL_CATEGORIES  = [...CIBO_CATEGORIES, ...BAR_CATEGORIES];
+const CIBO_CATEGORIES   = ["🥪 Panini","🍕 Extra"];
+const FRITTI_CATEGORIES = ["🍟 Fritti"];
+const BAR_CATEGORIES    = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
+const ALL_CATEGORIES    = [...CIBO_CATEGORIES, ...FRITTI_CATEGORIES, ...BAR_CATEGORIES];
 const fmt = n => "€" + n.toFixed(2);
 let rcptN = parseInt(localStorage.getItem("rcpt_n") || "1");
 
@@ -267,6 +268,7 @@ function POS({ theme, toggleTheme }) {
   const [disc, setDisc]     = useState(0);
   const [table, setTable]   = useState("");
   const [flash, setFlash]   = useState(null);
+  const [variantPick, setVariantPick] = useState(null); // {item} - item con varianti da scegliere
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => {
@@ -280,10 +282,32 @@ function POS({ theme, toggleTheme }) {
   const total    = subtotal-discAmt;
   const cartCount = cart.reduce((s,i)=>s+i.qty,0);
 
-  const addItem = item => {
-    setCart(p=>{const e=p.find(i=>i.id===item.id);return e?p.map(i=>i.id===item.id?{...i,qty:i.qty+1}:i):[...p,{...item,qty:1}];});
-    setFlash("+1 "+item.name);
+  const _pushToCart = (it) => {
+    setCart(p=>{const e=p.find(i=>i.id===it.id);return e?p.map(i=>i.id===it.id?{...i,qty:i.qty+1}:i):[...p,{...it,qty:1}];});
+    setFlash("+1 "+it.name);
     setTimeout(()=>setFlash(null),900);
+  };
+
+  const addItem = item => {
+    // Se è già un item dal carrello (con qty/variant già definiti), aggiungi direttamente
+    if (item.qty !== undefined || item.variant !== undefined) { _pushToCart(item); return; }
+    // Se ha varianti, apri il picker
+    if (item.variants && item.variants.length) { setVariantPick(item); return; }
+    _pushToCart(item);
+  };
+
+  const pickVariant = (item, variantName) => {
+    // Genera id univoco per variante: id base * 1000 + indice variante
+    const idx = item.variants.indexOf(variantName);
+    const variantItem = {
+      id: item.id * 1000 + idx + 1,
+      name: item.name + " (" + variantName + ")",
+      price: item.price,
+      cat: item.cat,
+      variant: variantName,
+    };
+    _pushToCart(variantItem);
+    setVariantPick(null);
   };
   const remItem = id => setCart(p=>{const e=p.find(i=>i.id===id);return e.qty===1?p.filter(i=>i.id!==id):p.map(i=>i.id===id?{...i,qty:i.qty-1}:i);});
   const clearCart = ()=>{setCart([]);setDisc(0);setTable("");};
@@ -292,9 +316,10 @@ function POS({ theme, toggleTheme }) {
   const checkout = () => {
     if (!cart.length) return;
     const now = new Date().toLocaleString("it-IT");
-    const ciboItems = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
-    const barItems  = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
-    const receipts  = [];
+    const ciboItems   = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
+    const frittiItems = cart.filter(i => FRITTI_CATEGORIES.includes(i.cat));
+    const barItems    = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
+    const receipts    = [];
 
     const makeReceipt = (items, centro) => {
       const sub  = items.reduce((s,i)=>s+i.price*i.qty,0);
@@ -313,8 +338,9 @@ function POS({ theme, toggleTheme }) {
       };
     };
 
-    if (ciboItems.length) receipts.push(makeReceipt(ciboItems, "🍕 CIBO"));
-    if (barItems.length)  receipts.push(makeReceipt(barItems,  "🍺 BAR"));
+    if (ciboItems.length)   receipts.push(makeReceipt(ciboItems,   "🍕 CIBO"));
+    if (frittiItems.length) receipts.push(makeReceipt(frittiItems, "🍟 FRITTI"));
+    if (barItems.length)    receipts.push(makeReceipt(barItems,    "🍺 BAR"));
 
     localStorage.setItem("rcpt_n", rcptN);
 
@@ -459,7 +485,27 @@ function POS({ theme, toggleTheme }) {
 
   /* ── MOBILE LAYOUT ── */
   if (isMobile) return (
-    <div style={{height:"100vh",display:"flex",flexDirection:"column",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",overflow:"hidden"}}>
+    <div style={{height:"100dvh",display:"flex",flexDirection:"column",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",overflow:"hidden"}}>
+
+      {/* MODAL SELETTORE VARIANTI */}
+      {variantPick && (
+        <div onClick={()=>setVariantPick(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px"}}>{variantPick.name}</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli un'opzione</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {variantPick.variants.map(v => (
+                <button key={v} onClick={()=>pickVariant(variantPick, v)} style={{background:"#0f172a",border:"1px solid #334155",color:"#e2e8f0",padding:"14px 16px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:600,textAlign:"left"}}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>setVariantPick(null)} style={{marginTop:14,width:"100%",background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* TOP BAR */}
       <div style={{background:"#1e293b",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #334155",flexShrink:0}}>
@@ -554,7 +600,7 @@ function POS({ theme, toggleTheme }) {
 
               {/* Footer con totale e pagamento */}
               {cart.length>0 && (
-                <div style={{background:"#131f30",borderTop:"1px solid #334155",padding:"12px 14px",flexShrink:0}}>
+                <div style={{background:"#131f30",borderTop:"1px solid #334155",padding:"12px 14px 16px",paddingBottom:"calc(16px + env(safe-area-inset-bottom))",flexShrink:0}}>
                   {/* Sconto */}
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
                     <span style={{color:"#94a3b8",fontSize:13}}>Sconto %</span>
@@ -737,6 +783,26 @@ function POS({ theme, toggleTheme }) {
   /* ── DESKTOP LAYOUT (invariato) ── */
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",display:"flex",flexDirection:"column"}}>
+
+      {/* MODAL SELETTORE VARIANTI */}
+      {variantPick && (
+        <div onClick={()=>setVariantPick(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px"}}>{variantPick.name}</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli un'opzione</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {variantPick.variants.map(v => (
+                <button key={v} onClick={()=>pickVariant(variantPick, v)} style={{background:"#0f172a",border:"1px solid #334155",color:"#e2e8f0",padding:"14px 16px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:600,textAlign:"left"}}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>setVariantPick(null)} style={{marginTop:14,width:"100%",background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
       <nav style={{background:"#1e293b",padding:"12px 24px",display:"flex",alignItems:"center",gap:16,borderBottom:"1px solid #334155",flexWrap:"wrap"}}>
         <div style={{fontSize:19,fontWeight:800,color:"#f8fafc",marginRight:8,letterSpacing:"-0.4px"}}>⚽ Torneo del Prete</div>
         <div style={{display:"flex",gap:8}}>
@@ -1019,6 +1085,9 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
               <optgroup label="🍕 CIBO">
                 {CIBO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
+              <optgroup label="🍟 FRITTI">
+                {FRITTI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
               <optgroup label="🍺 BAR">
                 {BAR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
@@ -1060,7 +1129,7 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
             <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
               {catName}
               <span style={{fontSize:11,color:C.muted,fontWeight:400}}>
-                ({CIBO_CATEGORIES.includes(catName) ? "CIBO" : "BAR"})
+                ({CIBO_CATEGORIES.includes(catName) ? "CIBO" : FRITTI_CATEGORIES.includes(catName) ? "FRITTI" : "BAR"})
               </span>
             </div>
             {byCat[catName].length === 0 && (
