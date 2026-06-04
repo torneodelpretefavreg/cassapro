@@ -166,10 +166,9 @@ const DEFAULT_MENU = [
   { id:28, name:"Jagermeister",              price:3.00,  cat:"🥃 Shot" },
 ];
 
-const CIBO_CATEGORIES   = ["🥪 Panini","🍕 Extra"];
-const FRITTI_CATEGORIES = ["🍟 Fritti"];
-const BAR_CATEGORIES    = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
-const ALL_CATEGORIES    = [...CIBO_CATEGORIES, ...FRITTI_CATEGORIES, ...BAR_CATEGORIES];
+const CIBO_CATEGORIES = ["🥪 Panini","🍟 Fritti","🍕 Extra"];
+const BAR_CATEGORIES  = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
+const ALL_CATEGORIES  = [...CIBO_CATEGORIES, ...BAR_CATEGORIES];
 const fmt = n => "€" + n.toFixed(2);
 let rcptN = parseInt(localStorage.getItem("rcpt_n") || "1");
 
@@ -231,6 +230,24 @@ function POS({ theme, toggleTheme }) {
       setSyncStatus("connected");
     };
     ref.on("value", handler, () => setSyncStatus("error"));
+    return () => ref.off("value", handler);
+  }, []);
+
+  // Comande (cucina)
+  const [comande, setComande] = useState([]);
+  useEffect(() => {
+    if (!db) return;
+    const ref = db.ref("torneo/comande");
+    const handler = snap => {
+      const val = snap.val();
+      if (val) {
+        const arr = Object.entries(val).map(([k,v])=>({...v,_key:k})).sort((a,b)=>a.id-b.id);
+        setComande(arr);
+      } else {
+        setComande([]);
+      }
+    };
+    ref.on("value", handler);
     return () => ref.off("value", handler);
   }, []);
 
@@ -321,11 +338,32 @@ function POS({ theme, toggleTheme }) {
 
   const checkout = () => {
     if (!cart.length) return;
+    if (!table.trim()) {
+      alert("Inserisci il nome del cliente prima di incassare.");
+      return;
+    }
     const now = new Date().toLocaleString("it-IT");
-    const ciboItems   = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
-    const frittiItems = cart.filter(i => FRITTI_CATEGORIES.includes(i.cat));
-    const barItems    = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
-    const receipts    = [];
+    const nomeBase = table.trim();
+    // Cerca comande non evase con lo stesso nome (o con suffisso "Nome N")
+    const attive = comande.filter(c => !c.evasa);
+    const regex = new RegExp("^" + nomeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "( \\d+)?$", "i");
+    const conflitti = attive.filter(c => c.cliente && regex.test(c.cliente));
+    let clienteFinale = nomeBase;
+    if (conflitti.length > 0) {
+      // Trova il numero massimo già usato
+      let maxN = 1;
+      conflitti.forEach(c => {
+        const match = c.cliente.match(new RegExp("^" + nomeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " (\\d+)$", "i"));
+        if (match) {
+          const n = parseInt(match[1]);
+          if (n > maxN) maxN = n;
+        }
+      });
+      clienteFinale = nomeBase + " " + (maxN + 1);
+    }
+    const ciboItems = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
+    const barItems  = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
+    const receipts  = [];
 
     const makeReceipt = (items, centro) => {
       const sub  = items.reduce((s,i)=>s+i.price*i.qty,0);
@@ -339,14 +377,32 @@ function POS({ theme, toggleTheme }) {
         discAmt: dAmt,
         total: sub - dAmt,
         pay,
-        table: table||null,
+        table: clienteFinale,
         centro,
       };
     };
 
-    if (ciboItems.length)   receipts.push(makeReceipt(ciboItems,   "🍕 CIBO"));
-    if (frittiItems.length) receipts.push(makeReceipt(frittiItems, "🍟 FRITTI"));
-    if (barItems.length)    receipts.push(makeReceipt(barItems,    "🍺 BAR"));
+    if (ciboItems.length) receipts.push(makeReceipt(ciboItems, "🍕 CIBO"));
+    if (barItems.length)  receipts.push(makeReceipt(barItems,  "🍺 BAR"));
+
+    // Crea anche una COMANDA per la cucina (solo articoli CIBO)
+    if (ciboItems.length && db) {
+      const comanda = {
+        id: receipts.find(r => r.centro === "🍕 CIBO").id,
+        date: now,
+        cliente: clienteFinale,
+        items: ciboItems.map((it, idx) => ({
+          uid: idx,
+          name: it.name,
+          variant: it.variant || null,
+          qty: it.qty,
+          done: false,
+        })),
+        stato: "attesa",  // attesa | lavorazione | evasa
+        evasa: false,
+      };
+      db.ref("torneo/comande").push(comanda);
+    }
 
     localStorage.setItem("rcpt_n", rcptN);
 
@@ -368,6 +424,32 @@ function POS({ theme, toggleTheme }) {
     setRcptIdx(0);
     clearCart();
     setView("scontrino");
+  };
+
+  // === FUNZIONI COMANDE (Cucina) ===
+  const toggleComandaItem = (comanda, itemUid) => {
+    const newItems = comanda.items.map(it =>
+      it.uid === itemUid ? {...it, done: !it.done} : it
+    );
+    const allDone = newItems.every(it => it.done);
+    const update = { items: newItems, evasa: allDone };
+    if (allDone) update.stato = "evasa";
+    else if (comanda.stato === "evasa") update.stato = "lavorazione";
+    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update(update);
+  };
+
+  const consegnaScontrino = (comanda) => {
+    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update({ stato: "lavorazione" });
+  };
+
+  const evadiComanda = (comanda) => {
+    const newItems = comanda.items.map(it => ({...it, done: true}));
+    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update({ items: newItems, evasa: true, stato: "evasa" });
+  };
+
+  const deleteComanda = (comanda) => {
+    if (!window.confirm("Eliminare la comanda di " + comanda.cliente + "?")) return;
+    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).remove();
   };
 
   const deleteAllOrders = () => {
@@ -522,7 +604,7 @@ function POS({ theme, toggleTheme }) {
           </div>
         </div>
         <div style={{display:"flex",gap:6}}>
-          {[["cassa","🧾"],["report","📊"],["articoli","🍔"],["impostazioni","⚙️"]].map(([v,ic])=>(
+          {[["cassa","🧾"],["cucina","🧑‍🍳"],["report","📊"],["articoli","🍔"],["impostazioni","⚙️"]].map(([v,ic])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#dc2626":"#334155",border:"none",color:"#fff",width:38,height:38,borderRadius:10,fontSize:18,cursor:"pointer"}}>
               {ic}
             </button>
@@ -584,7 +666,7 @@ function POS({ theme, toggleTheme }) {
             <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
               {/* Table input */}
               <div style={{padding:"8px 10px",flexShrink:0}}>
-                <input value={table} onChange={e=>setTable(e.target.value)} placeholder="👤 Tavolo / Cliente (opz.)" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
+                <input value={table} onChange={e=>setTable(e.target.value)} placeholder="👤 Nome cliente (obbligatorio)" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
               </div>
               {/* Cart items */}
               <div style={{flex:1,overflowY:"auto",padding:"0 10px"}}>
@@ -763,6 +845,13 @@ function POS({ theme, toggleTheme }) {
         </div>
       )}
 
+      {/* ── CUCINA MOBILE ── */}
+      {view==="cucina" && (
+        <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
+          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} isMobile={true} />
+        </div>
+      )}
+
       {/* ── ARTICOLI MOBILE ── */}
       {view==="articoli" && (
         <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
@@ -818,7 +907,7 @@ function POS({ theme, toggleTheme }) {
       <nav style={{background:"#1e293b",padding:"12px 24px",display:"flex",alignItems:"center",gap:16,borderBottom:"1px solid #334155",flexWrap:"wrap"}}>
         <div style={{fontSize:19,fontWeight:800,color:"#f8fafc",marginRight:8,letterSpacing:"-0.4px"}}>⚽ Torneo del Prete</div>
         <div style={{display:"flex",gap:8}}>
-          {[["cassa","🧾 Cassa"],["report","📊 Report"],["articoli","🍔 Articoli"],["impostazioni","⚙️ Stampante"]].map(([v,label])=>(
+          {[["cassa","🧾 Cassa"],["cucina","🧑‍🍳 Cucina"],["report","📊 Report"],["articoli","🍔 Articoli"],["impostazioni","⚙️ Stampante"]].map(([v,label])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#dc2626":"transparent",border:`1px solid ${view===v?"#dc2626":"#334155"}`,color:view===v?"#fff":"#94a3b8",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>
               {label}
             </button>
@@ -853,7 +942,7 @@ function POS({ theme, toggleTheme }) {
           <div style={{width:340,display:"flex",flexDirection:"column",background:"#131f30"}}>
             <div style={{padding:"14px 16px 10px",borderBottom:"1px solid #1e293b"}}>
               <span style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>🛒 Ordine</span>
-              <input value={table} onChange={e=>setTable(e.target.value)} placeholder="Tavolo / Cliente" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"6px 10px",borderRadius:6,fontSize:13,fontFamily:"inherit",outline:"none",marginTop:8}} />
+              <input value={table} onChange={e=>setTable(e.target.value)} placeholder="Nome cliente (obbligatorio)" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"6px 10px",borderRadius:6,fontSize:13,fontFamily:"inherit",outline:"none",marginTop:8}} />
             </div>
             <div style={{flex:1,overflowY:"auto",padding:"8px 12px"}}>
               {!cart.length&&<div style={{textAlign:"center",color:"#475569",padding:"40px 0",fontSize:15}}>Nessun articolo<br/><span style={{fontSize:32}}>🛒</span></div>}
@@ -1013,6 +1102,12 @@ function POS({ theme, toggleTheme }) {
         </div>
       )}
 
+      {view==="cucina"&&(
+        <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
+          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} isMobile={false} />
+        </div>
+      )}
+
       {view==="articoli"&&(
         <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
           <ArticoliManager menu={menu} saveMenu={saveMenu} isMobile={false} />
@@ -1037,6 +1132,161 @@ function POS({ theme, toggleTheme }) {
           <FirebaseConfig syncStatus={syncStatus} />
         </div>
       )}
+    </div>
+  );
+}
+
+function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrino, deleteComanda, isMobile }) {
+  const [tab, setTab] = React.useState("attesa"); // attesa | lavorazione | storico
+
+  // Le comande nuove senza il campo stato sono considerate "attesa"
+  const getStato = c => c.evasa ? "evasa" : (c.stato || "attesa");
+
+  const attesa     = comande.filter(c => getStato(c) === "attesa");
+  const lavoraz    = comande.filter(c => getStato(c) === "lavorazione");
+  const storico    = comande.filter(c => getStato(c) === "evasa").reverse();
+
+  const C = {
+    bg:"#1e293b", border:"#334155", input:"#0f172a",
+    text:"#e2e8f0", muted:"#94a3b8", price:"#f87171",
+    success:"#15803d", successBg:"#14532d", warning:"#fbbf24",
+  };
+
+  const ComandaCard = ({ c }) => {
+    const stato = getStato(c);
+    const evasa = stato === "evasa";
+    const isAttesa = stato === "attesa";
+
+    const borderColor = isAttesa ? "#fbbf24" : (evasa ? C.border : "#dc2626");
+    const badgeColor  = isAttesa ? {bg:"#713f12",text:"#fbbf24",icon:"⏳",label:"IN ATTESA"}
+                       : (evasa ? {bg:C.successBg,text:"#4ade80",icon:"✅",label:"EVASA"}
+                                : {bg:"#991b1b",text:"#fff",icon:"🔥",label:"IN LAVORAZ."});
+
+    return (
+      <div style={{background:C.bg, borderRadius:12, padding:14, border:"2px solid "+borderColor, marginBottom:10, opacity:evasa?0.6:1}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, gap:8}}>
+          <div>
+            <div style={{fontSize:17, fontWeight:800, color:"#f8fafc", letterSpacing:"-0.3px"}}>
+              👤 {c.cliente}
+            </div>
+            <div style={{fontSize:11, color:C.muted, marginTop:2}}>
+              #{String(c.id).padStart(4,"0")} · {c.date}
+            </div>
+          </div>
+          <span style={{fontSize:11, padding:"4px 10px", borderRadius:20, background:badgeColor.bg, color:badgeColor.text, fontWeight:700, whiteSpace:"nowrap"}}>
+            {badgeColor.icon} {badgeColor.label}
+          </span>
+        </div>
+
+        <div style={{display:"flex", flexDirection:"column", gap:6}}>
+          {c.items.map(it => (
+            <div key={it.uid} onClick={()=>!evasa && !isAttesa && toggleComandaItem(c, it.uid)}
+              style={{
+                display:"flex", alignItems:"center", gap:10,
+                padding:"10px 12px",
+                background: it.done ? "#0a1e0f" : C.input,
+                border:"1px solid "+(it.done?"#15803d":C.border),
+                borderRadius:8,
+                cursor: (evasa || isAttesa) ? "default" : "pointer",
+              }}>
+              <div style={{
+                width:22, height:22, borderRadius:6,
+                background: it.done ? "#15803d" : "transparent",
+                border:"2px solid "+(it.done?"#15803d":C.muted),
+                display:"flex", alignItems:"center", justifyContent:"center",
+                flexShrink:0, fontSize:14, color:"#fff", fontWeight:900,
+              }}>
+                {it.done ? "✓" : ""}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{
+                  fontSize:14, fontWeight:700,
+                  color: it.done ? C.muted : "#f8fafc",
+                  textDecoration: it.done ? "line-through" : "none",
+                }}>
+                  {it.qty}× {it.name}
+                </div>
+                {it.variant && (
+                  <div style={{
+                    fontSize:12, color: it.done ? C.muted : C.warning,
+                    fontStyle:"italic", marginTop:2,
+                    textDecoration: it.done ? "line-through" : "none",
+                  }}>
+                    ↳ {it.variant}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* AZIONI */}
+        {isAttesa && (
+          <div style={{display:"flex", gap:8, marginTop:12}}>
+            <button onClick={()=>consegnaScontrino(c)} style={{flex:2, background:"#dc2626", border:"none", color:"#fff", padding:"11px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:14, fontWeight:700}}>
+              🔥 Scontrino consegnato
+            </button>
+            <button onClick={()=>deleteComanda(c)} style={{flex:1, background:"#7f1d1d", border:"none", color:"#fca5a5", padding:"11px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:14}}>
+              🗑
+            </button>
+          </div>
+        )}
+        {!isAttesa && !evasa && (
+          <div style={{display:"flex", gap:8, marginTop:12}}>
+            <button onClick={()=>evadiComanda(c)} style={{flex:2, background:C.success, border:"none", color:"#fff", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700}}>
+              ✅ Evadi tutto
+            </button>
+            <button onClick={()=>deleteComanda(c)} style={{flex:1, background:"#7f1d1d", border:"none", color:"#fca5a5", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13}}>
+              🗑
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const tabs = [
+    {key:"attesa",      label:"⏳ In Attesa",      count:attesa.length,    active:"#b45309",  inactive:C.border},
+    {key:"lavorazione", label:"🔥 In Lavorazione", count:lavoraz.length,   active:"#dc2626",  inactive:C.border},
+    {key:"storico",     label:"📜 Storico",        count:storico.length,   active:"#15803d",  inactive:C.border},
+  ];
+
+  const list = tab === "attesa" ? attesa : tab === "lavorazione" ? lavoraz : storico;
+  const emptyMsg = tab === "attesa" ? "Nessuna comanda in attesa" : tab === "lavorazione" ? "Nessuna comanda in lavorazione" : "Lo storico è vuoto";
+  const emptyEmoji = tab === "attesa" ? "📋" : tab === "lavorazione" ? "😌" : "📭";
+
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:10}}>
+        <h2 style={{fontSize:isMobile?18:24, fontWeight:800, color:"#f8fafc", letterSpacing:"-0.4px"}}>
+          🧑‍🍳 Cucina
+        </h2>
+      </div>
+
+      {/* Tab switcher */}
+      <div style={{display:"flex", gap:6, marginBottom:14, overflowX:"auto"}}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={()=>setTab(t.key)}
+            style={{
+              background: tab===t.key ? t.active : "transparent",
+              border:"1px solid "+(tab===t.key ? t.active : t.inactive),
+              color: tab===t.key ? "#fff" : C.muted,
+              padding:"8px 14px", borderRadius:8, cursor:"pointer",
+              fontFamily:"inherit", fontSize:13, fontWeight:700, whiteSpace:"nowrap", flexShrink:0,
+            }}>
+            {t.label} ({t.count})
+          </button>
+        ))}
+      </div>
+
+      {list.length === 0 && (
+        <div style={{background:C.bg, borderRadius:12, padding:30, border:"1px solid "+C.border, textAlign:"center", color:C.muted}}>
+          <div style={{fontSize:40, marginBottom:8}}>{emptyEmoji}</div>
+          <div style={{fontSize:14}}>{emptyMsg}</div>
+        </div>
+      )}
+
+      {list.map(c => <ComandaCard key={c._key||c.id} c={c} />)}
     </div>
   );
 }
@@ -1103,9 +1353,6 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
               <optgroup label="🍕 CIBO">
                 {CIBO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
-              <optgroup label="🍟 FRITTI">
-                {FRITTI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </optgroup>
               <optgroup label="🍺 BAR">
                 {BAR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
@@ -1147,7 +1394,7 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
             <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
               {catName}
               <span style={{fontSize:11,color:C.muted,fontWeight:400}}>
-                ({CIBO_CATEGORIES.includes(catName) ? "CIBO" : FRITTI_CATEGORIES.includes(catName) ? "FRITTI" : "BAR"})
+                ({CIBO_CATEGORIES.includes(catName) ? "CIBO" : "BAR"})
               </span>
             </div>
             {byCat[catName].length === 0 && (
