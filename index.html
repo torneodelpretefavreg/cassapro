@@ -670,10 +670,16 @@ function POS({ theme, toggleTheme }) {
               <span>Descrizione</span><span>Qt</span><span>Imp.</span>
             </div>
             {r.items.map((i,idx)=>{
-              const name=i.name.length>18?i.name.substring(0,17)+".":i.name.padEnd(18," ");
+              const baseName = i.variant ? i.name.replace(" ("+i.variant+")","") : i.name;
+              const name = baseName.length>18 ? baseName.substring(0,17)+"." : baseName.padEnd(18," ");
               const qty=("x"+i.qty).padStart(3," ");
               const price=fmt(i.price*i.qty).padStart(7," ");
-              return <div key={idx} style={{fontSize:11,padding:"1px 0",fontFamily:"'JetBrains Mono','Courier New',monospace",whiteSpace:"pre"}}>{name}{qty}{price}</div>;
+              return (
+                <div key={idx}>
+                  <div style={{fontSize:11,padding:"1px 0",fontFamily:"'JetBrains Mono','Courier New',monospace",whiteSpace:"pre"}}>{name}{qty}{price}</div>
+                  {i.variant && <div style={{fontSize:10,padding:"0 0 1px 6px",fontFamily:"'JetBrains Mono','Courier New',monospace",fontStyle:"italic"}}>↳ {i.variant}</div>}
+                </div>
+              );
             })}
             <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
             {r.disc>0&&<>
@@ -911,8 +917,14 @@ function POS({ theme, toggleTheme }) {
             <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
             <div style={{display:"flex",justifyContent:"space-between",borderBottom:"1px solid #eee",paddingBottom:4,marginBottom:4,fontSize:11}}><span>Descrizione</span><span>Qt</span><span>Imp.</span></div>
             {r.items.map((i,idx)=>{
-              const name=i.name.length>18?i.name.substring(0,17)+".":i.name.padEnd(18," ");
-              return <div key={idx} style={{fontSize:11,padding:"1px 0",fontFamily:"'JetBrains Mono','Courier New',monospace",whiteSpace:"pre"}}>{name}{"x"+i.qty}{fmt(i.price*i.qty).padStart(8," ")}</div>;
+              const baseName = i.variant ? i.name.replace(" ("+i.variant+")","") : i.name;
+              const name = baseName.length>18 ? baseName.substring(0,17)+"." : baseName.padEnd(18," ");
+              return (
+                <div key={idx}>
+                  <div style={{fontSize:11,padding:"1px 0",fontFamily:"'JetBrains Mono','Courier New',monospace",whiteSpace:"pre"}}>{name}{"x"+i.qty}{fmt(i.price*i.qty).padStart(8," ")}</div>
+                  {i.variant && <div style={{fontSize:10,padding:"0 0 1px 6px",fontFamily:"'JetBrains Mono','Courier New',monospace",fontStyle:"italic"}}>↳ {i.variant}</div>}
+                </div>
+              );
             })}
             <div style={{borderTop:"1px dashed #000",margin:"8px 0"}}/>
             {r.disc>0&&<><div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span>Subtotale</span><span>{fmt(r.subtotal)}</span></div><div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span>Sconto {r.disc}%</span><span>-{fmt(r.discAmt)}</span></div></>}
