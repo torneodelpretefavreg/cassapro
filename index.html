@@ -249,8 +249,14 @@ function POS({ theme, toggleTheme }) {
     const handler = snap => {
       const val = snap.val();
       if (val && Array.isArray(val) && val.length) {
-        setMenu(val);
-        localStorage.setItem("menu", JSON.stringify(val));
+        // Arricchisce ogni voce con le varianti del DEFAULT_MENU (se presenti) — non perse durante sync
+        const enriched = val.map(it => {
+          const def = DEFAULT_MENU.find(d => d.id === it.id || d.name === it.name);
+          if (def && def.variants && !it.variants) return {...it, variants: def.variants};
+          return it;
+        });
+        setMenu(enriched);
+        localStorage.setItem("menu", JSON.stringify(enriched));
       }
     };
     ref.on("value", handler);
