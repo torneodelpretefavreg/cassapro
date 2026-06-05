@@ -314,6 +314,7 @@ function POS({ theme, toggleTheme }) {
   const [table, setTable]   = useState("");
   const [flash, setFlash]   = useState(null);
   const [variantPick, setVariantPick] = useState(null); // {item} - item con varianti da scegliere
+  const [variantSel, setVariantSel] = useState([]);      // opzioni selezionate nel picker (multi-scelta)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => {
@@ -336,23 +337,38 @@ function POS({ theme, toggleTheme }) {
   const addItem = item => {
     // Se è già un item dal carrello (con qty/variant già definiti), aggiungi direttamente
     if (item.qty !== undefined || item.variant !== undefined) { _pushToCart(item); return; }
-    // Se ha varianti, apri il picker
-    if (item.variants && item.variants.length) { setVariantPick(item); return; }
+    // Se ha varianti, apri il picker (multi-scelta)
+    if (item.variants && item.variants.length) { setVariantSel([]); setVariantPick(item); return; }
     _pushToCart(item);
   };
 
-  const pickVariant = (item, variantName) => {
-    // Genera id univoco per variante: id base * 1000 + indice variante
-    const idx = item.variants.indexOf(variantName);
+  // Attiva/disattiva una singola opzione nel picker
+  const toggleVariant = (v) => setVariantSel(p => p.includes(v) ? p.filter(x=>x!==v) : [...p, v]);
+
+  // Conferma la selezione (può essere multipla) e aggiunge al carrello
+  const confirmVariants = () => {
+    const item = variantPick;
+    if (!item) return;
+    // Nessuna opzione scelta → aggiunge l'articolo base
+    if (variantSel.length === 0) {
+      _pushToCart({ id:item.id, name:item.name, price:item.price, cat:item.cat });
+      setVariantPick(null); setVariantSel([]); return;
+    }
+    // Ordina le opzioni secondo l'ordine originale (id coerente a parità di combinazione)
+    const ordered = item.variants.filter(v => variantSel.includes(v));
+    // id univoco per combinazione tramite bitmask degli indici scelti
+    let mask = 0;
+    ordered.forEach(v => { mask += Math.pow(2, item.variants.indexOf(v)); });
+    const label = ordered.join(", ");
     const variantItem = {
-      id: item.id * 1000 + idx + 1,
-      name: item.name + " (" + variantName + ")",
+      id: item.id * 1000000 + mask,
+      name: item.name + " (" + label + ")",
       price: item.price,
       cat: item.cat,
-      variant: variantName,
+      variant: label,
     };
     _pushToCart(variantItem);
-    setVariantPick(null);
+    setVariantPick(null); setVariantSel([]);
   };
   const remItem = id => setCart(p=>{const e=p.find(i=>i.id===id);return e.qty===1?p.filter(i=>i.id!==id):p.map(i=>i.id===id?{...i,qty:i.qty-1}:i);});
   const clearCart = ()=>{setCart([]);setDisc(0);setTable("");};
@@ -611,17 +627,26 @@ function POS({ theme, toggleTheme }) {
         <div onClick={()=>setVariantPick(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
             <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px"}}>{variantPick.name}</div>
-            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli un'opzione</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli le opzioni — puoi selezionarne più di una, poi premi Fatto</div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {variantPick.variants.map(v => (
-                <button key={v} onClick={()=>pickVariant(variantPick, v)} style={{background:"#0f172a",border:"1px solid #334155",color:"#e2e8f0",padding:"14px 16px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:600,textAlign:"left"}}>
-                  {v}
-                </button>
-              ))}
+              {variantPick.variants.map(v => {
+                const on = variantSel.includes(v);
+                return (
+                  <button key={v} onClick={()=>toggleVariant(v)} style={{background:on?"#7f1d1d":"#0f172a",border:"1px solid "+(on?"#dc2626":"#334155"),color:on?"#fff":"#e2e8f0",padding:"14px 16px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:600,textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                    <span>{v}</span>
+                    <span style={{fontSize:16,opacity:on?1:0.3}}>{on?"\u2713":"\u25cb"}</span>
+                  </button>
+                );
+              })}
             </div>
-            <button onClick={()=>setVariantPick(null)} style={{marginTop:14,width:"100%",background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
-              Annulla
-            </button>
+            <div style={{display:"flex",gap:10,marginTop:16}}>
+              <button onClick={()=>{setVariantPick(null);setVariantSel([]);}} style={{flex:1,background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
+                Annulla
+              </button>
+              <button onClick={confirmVariants} style={{flex:2,background:"#dc2626",border:"none",color:"#fff",padding:"12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:700}}>
+                {"\u2713 Fatto"}{variantSel.length>0?" ("+variantSel.length+")":""}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -921,17 +946,26 @@ function POS({ theme, toggleTheme }) {
         <div onClick={()=>setVariantPick(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
             <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px"}}>{variantPick.name}</div>
-            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli un'opzione</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli le opzioni — puoi selezionarne più di una, poi premi Fatto</div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {variantPick.variants.map(v => (
-                <button key={v} onClick={()=>pickVariant(variantPick, v)} style={{background:"#0f172a",border:"1px solid #334155",color:"#e2e8f0",padding:"14px 16px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:600,textAlign:"left"}}>
-                  {v}
-                </button>
-              ))}
+              {variantPick.variants.map(v => {
+                const on = variantSel.includes(v);
+                return (
+                  <button key={v} onClick={()=>toggleVariant(v)} style={{background:on?"#7f1d1d":"#0f172a",border:"1px solid "+(on?"#dc2626":"#334155"),color:on?"#fff":"#e2e8f0",padding:"14px 16px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:600,textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                    <span>{v}</span>
+                    <span style={{fontSize:16,opacity:on?1:0.3}}>{on?"\u2713":"\u25cb"}</span>
+                  </button>
+                );
+              })}
             </div>
-            <button onClick={()=>setVariantPick(null)} style={{marginTop:14,width:"100%",background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
-              Annulla
-            </button>
+            <div style={{display:"flex",gap:10,marginTop:16}}>
+              <button onClick={()=>{setVariantPick(null);setVariantSel([]);}} style={{flex:1,background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
+                Annulla
+              </button>
+              <button onClick={confirmVariants} style={{flex:2,background:"#dc2626",border:"none",color:"#fff",padding:"12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:700}}>
+                {"\u2713 Fatto"}{variantSel.length>0?" ("+variantSel.length+")":""}
+              </button>
+            </div>
           </div>
         </div>
       )}
