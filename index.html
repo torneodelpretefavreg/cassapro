@@ -294,14 +294,8 @@ function POS({ theme, toggleTheme }) {
     const handler = snap => {
       const val = snap.val();
       if (val && Array.isArray(val) && val.length) {
-        // Arricchisce ogni voce con le varianti del DEFAULT_MENU (se presenti) — non perse durante sync
-        const enriched = val.map(it => {
-          const def = DEFAULT_MENU.find(d => d.id === it.id || d.name === it.name);
-          if (def && def.variants && !it.variants) return {...it, variants: def.variants};
-          return it;
-        });
-        setMenu(enriched);
-        localStorage.setItem("menu", JSON.stringify(enriched));
+        setMenu(val);
+        localStorage.setItem("menu", JSON.stringify(val));
       }
     };
     ref.on("value", handler);
@@ -1345,18 +1339,23 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
 
 function ArticoliManager({ menu, saveMenu, isMobile }) {
   const [editing, setEditing] = React.useState(null); // id in modifica
-  const [draft, setDraft] = React.useState({ name:"", price:"", cat:"🥪 Panini" });
+  const [draft, setDraft] = React.useState({ name:"", price:"", cat:"🥪 Panini", variants:"" });
   const [adding, setAdding] = React.useState(false);
 
   const startAdd = () => {
     setAdding(true);
     setEditing(null);
-    setDraft({ name:"", price:"", cat:"🥪 Panini" });
+    setDraft({ name:"", price:"", cat:"🥪 Panini", variants:"" });
   };
   const startEdit = (item) => {
     setEditing(item.id);
     setAdding(false);
-    setDraft({ name:item.name, price:String(item.price), cat:item.cat });
+    setDraft({
+      name:item.name,
+      price:String(item.price),
+      cat:item.cat,
+      variants: (item.variants || []).join("\n"),
+    });
   };
   const cancel = () => { setEditing(null); setAdding(false); };
 
@@ -1366,11 +1365,26 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
       alert("Inserisci un nome valido e un prezzo corretto.");
       return;
     }
+    // Parsing varianti: split per a capo, trim, scarta vuote
+    const variants = draft.variants
+      .split("\n")
+      .map(v => v.trim())
+      .filter(v => v.length > 0);
+
+    const baseItem = { name:draft.name.trim(), price, cat:draft.cat };
+    if (variants.length > 0) baseItem.variants = variants;
+
     if (adding) {
       const newId = Math.max(0, ...menu.map(i=>i.id)) + 1;
-      saveMenu([...menu, { id:newId, name:draft.name.trim(), price, cat:draft.cat }]);
+      saveMenu([...menu, { id:newId, ...baseItem }]);
     } else {
-      saveMenu(menu.map(i => i.id===editing ? {...i, name:draft.name.trim(), price, cat:draft.cat} : i));
+      saveMenu(menu.map(i => {
+        if (i.id !== editing) return i;
+        // Se non ci sono varianti, rimuovi il campo
+        const updated = {...i, ...baseItem};
+        if (variants.length === 0) delete updated.variants;
+        return updated;
+      }));
     }
     cancel();
   };
@@ -1409,6 +1423,21 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
                 {BAR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
             </select>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+            Opzioni / Varianti (una per riga, opzionale)
+          </div>
+          <textarea
+            value={draft.variants}
+            onChange={e=>setDraft({...draft,variants:e.target.value})}
+            placeholder={"Es:\nCipolla + Peperoni\nSolo Cipolla\nSolo Peperoni\nSolo Salsiccia"}
+            rows={4}
+            style={{...inputStyle, resize:"vertical", fontFamily:"inherit", minHeight:80}}
+          />
+          <div style={{fontSize:10,color:C.muted,marginTop:4,fontStyle:"italic"}}>
+            Se inserisci varianti, al click sull'articolo si aprirà un menu per scegliere l'opzione
           </div>
         </div>
         <div style={{display:"flex",gap:8,marginTop:4}}>
@@ -1459,6 +1488,11 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
                     <div style={{flex:1}}>
                       <div style={{fontSize:14,color:C.text,fontWeight:600}}>{item.name}</div>
                       <div style={{fontSize:13,color:C.price,fontWeight:700,marginTop:2}}>{fmt(item.price)}</div>
+                      {item.variants && item.variants.length > 0 && (
+                        <div style={{fontSize:11,color:C.muted,marginTop:3,fontStyle:"italic"}}>
+                          🎛 {item.variants.length} opzioni: {item.variants.join(", ")}
+                        </div>
+                      )}
                     </div>
                     <button onClick={()=>startEdit(item)} title="Modifica" style={{background:"#1d4ed8",border:"none",color:"#fff",padding:"7px 12px",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:600}}>✏️</button>
                     <button onClick={()=>deleteItem(item)} title="Elimina" style={{background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"7px 12px",borderRadius:7,cursor:"pointer",fontSize:13}}>🗑</button>
