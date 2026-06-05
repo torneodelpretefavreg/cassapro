@@ -113,6 +113,22 @@
     html.light [style*="background: rgb(21, 128, 61)"],
     html.light [style*="background:#15803d"] { background: #15803d !important; color: #fff !important; }
 
+    /* Pannelli carrello e contenuti */
+    html.light [style*="background:#131f30"] *,
+    html.light [style*="background: #131f30"] * { color: #1a1a1a; }
+    html.light [style*="background:#131f30"] [style*="color:#94a3b8"],
+    html.light [style*="background:#131f30"] [style*="color: #94a3b8"] { color: #525252 !important; }
+    html.light [style*="background:#131f30"] [style*="color:#cbd5e1"],
+    html.light [style*="background:#131f30"] [style*="color: #cbd5e1"] { color: #1a1a1a !important; }
+
+    /* Bottoni quantità +/- nel carrello (background #334155 → grigio chiaro, testo scuro) */
+    html.light button[style*="background: rgb(51, 65, 85)"],
+    html.light button[style*="background:#334155"],
+    html.light button[style*="background: #334155"] { background: #e5e5e0 !important; color: #1a1a1a !important; }
+
+    /* Bottoni pagamento non selezionati */
+    html.light button[style*="color: rgb(148, 163, 184)"] { color: #525252 !important; }
+
     /* Ombre più morbide in light */
     html.light [style*="box-shadow: rgba(0, 0, 0, 0.5)"] { box-shadow: 0 8px 40px rgba(0,0,0,0.15) !important; }
 
@@ -455,6 +471,13 @@ function POS({ theme, toggleTheme }) {
   const evadiComanda = (comanda) => {
     const newItems = comanda.items.map(it => ({...it, done: true}));
     if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update({ items: newItems, evasa: true, stato: "evasa" });
+  };
+
+  const svuotaStorico = () => {
+    const evase = comande.filter(c => c.evasa || c.stato === "evasa");
+    if (!evase.length) { alert("Lo storico è già vuoto."); return; }
+    if (!window.confirm("Eliminare tutte le " + evase.length + " comande evase dallo storico? Non si può annullare.")) return;
+    if (db) evase.forEach(c => { if (c._key) db.ref("torneo/comande/" + c._key).remove(); });
   };
 
   const deleteComanda = (comanda) => {
@@ -858,7 +881,7 @@ function POS({ theme, toggleTheme }) {
       {/* ── CUCINA MOBILE ── */}
       {view==="cucina" && (
         <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
-          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} isMobile={true} />
+          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} svuotaStorico={svuotaStorico} isMobile={true} />
         </div>
       )}
 
@@ -1114,7 +1137,7 @@ function POS({ theme, toggleTheme }) {
 
       {view==="cucina"&&(
         <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
-          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} isMobile={false} />
+          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} svuotaStorico={svuotaStorico} isMobile={false} />
         </div>
       )}
 
@@ -1146,7 +1169,7 @@ function POS({ theme, toggleTheme }) {
   );
 }
 
-function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrino, deleteComanda, isMobile }) {
+function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrino, deleteComanda, svuotaStorico, isMobile }) {
   const [tab, setTab] = React.useState("attesa"); // attesa | lavorazione | storico
 
   // Le comande nuove senza il campo stato sono considerate "attesa"
@@ -1251,6 +1274,13 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
             </button>
           </div>
         )}
+        {evasa && (
+          <div style={{display:"flex", gap:8, marginTop:12}}>
+            <button onClick={()=>deleteComanda(c)} style={{flex:1, background:"#7f1d1d", border:"none", color:"#fca5a5", padding:"9px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12}}>
+              🗑 Elimina dallo storico
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1288,6 +1318,14 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
           </button>
         ))}
       </div>
+
+      {tab === "storico" && storico.length > 0 && (
+        <div style={{textAlign:"right", marginBottom:10}}>
+          <button onClick={svuotaStorico} style={{background:"#7f1d1d", border:"1px solid #991b1b", color:"#fca5a5", padding:"7px 14px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:600}}>
+            🗑 Svuota storico ({storico.length})
+          </button>
+        </div>
+      )}
 
       {list.length === 0 && (
         <div style={{background:C.bg, borderRadius:12, padding:30, border:"1px solid "+C.border, textAlign:"center", color:C.muted}}>
