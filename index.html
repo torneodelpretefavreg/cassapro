@@ -1467,7 +1467,7 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
         )}
       </div>
 
-      {adding && {formJSX}}
+      {adding && formJSX}
 
       {ALL_CATEGORIES.map(catName => (
         byCat[catName].length > 0 || true ? (
@@ -1483,7 +1483,7 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
             )}
             {byCat[catName].map(item => (
               <div key={item.id}>
-                {editing === item.id ? {formJSX} : (
+                {editing === item.id ? formJSX : (
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+C.border}}>
                     <div style={{flex:1}}>
                       <div style={{fontSize:14,color:C.text,fontWeight:600}}>{item.name}</div>
