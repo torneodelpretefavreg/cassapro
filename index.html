@@ -1393,6 +1393,29 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
   };
   const cancel = () => { setEditing(null); setAdding(false); };
 
+  // Esporta il menu corrente (con prezzi aggiornati) in un file Excel
+  const exportMenuExcel = () => {
+    const rows = [["Categoria", "Tipo", "Articolo", "Prezzo (€)", "Opzioni"]];
+    ALL_CATEGORIES.forEach(cat => {
+      menu.filter(i => i.cat === cat).forEach(item => {
+        rows.push([
+          cat,
+          CIBO_CATEGORIES.includes(cat) ? "CIBO" : "BAR",
+          item.name,
+          Number(item.price.toFixed(2)),
+          (item.variants && item.variants.length) ? item.variants.join(" | ") : "",
+        ]);
+      });
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{wch:14},{wch:7},{wch:32},{wch:11},{wch:40}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Menu");
+    const d = new Date();
+    const dateStr = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+    XLSX.writeFile(wb, "menu_torneo_" + dateStr + ".xlsx");
+  };
+
   const saveItem = () => {
     const price = parseFloat(String(draft.price).replace(",","."));
     if (!draft.name.trim() || isNaN(price) || price < 0) {
@@ -1495,9 +1518,14 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
         <h2 style={{fontSize:isMobile?18:24,fontWeight:800,color:"#f8fafc",letterSpacing:"-0.4px"}}>🍔 Gestione Articoli</h2>
         {!adding && !editing && (
-          <button onClick={startAdd} style={{background:"#dc2626",border:"none",color:"#fff",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
-            ➕ Nuovo Articolo
-          </button>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={exportMenuExcel} title="Scarica il menu in Excel" style={{background:"#15803d",border:"none",color:"#fff",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+              📥 Scarica Menu Excel
+            </button>
+            <button onClick={startAdd} style={{background:"#dc2626",border:"none",color:"#fff",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+              ➕ Nuovo Articolo
+            </button>
+          </div>
         )}
       </div>
 
