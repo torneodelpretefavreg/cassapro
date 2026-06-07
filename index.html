@@ -186,9 +186,10 @@ const DEFAULT_MENU = [
   { id:28, name:"Jagermeister",              price:3.00,  cat:"🥃 Shot" },
 ];
 
-const CIBO_CATEGORIES = ["🥪 Panini","🍟 Fritti","🍕 Extra"];
-const BAR_CATEGORIES  = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
-const ALL_CATEGORIES  = [...CIBO_CATEGORIES, ...BAR_CATEGORIES];
+const CIBO_CATEGORIES   = ["🥪 Panini","🍕 Extra"];
+const FRITTI_CATEGORIES = ["🍟 Fritti"];
+const BAR_CATEGORIES    = ["🥤 Analc.","🍺 Alcolici","🥃 Shot"];
+const ALL_CATEGORIES    = ["🥪 Panini","🍟 Fritti","🍕 Extra","🥤 Analc.","🍺 Alcolici","🥃 Shot"];
 const fmt = n => "€" + n.toFixed(2);
 let rcptN = parseInt(localStorage.getItem("rcpt_n") || "1");
 
@@ -399,9 +400,10 @@ function POS({ theme, toggleTheme }) {
       });
       clienteFinale = nomeBase + " " + (maxN + 1);
     }
-    const ciboItems = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
-    const barItems  = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
-    const receipts  = [];
+    const ciboItems   = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
+    const frittiItems = cart.filter(i => FRITTI_CATEGORIES.includes(i.cat));
+    const barItems    = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
+    const receipts    = [];
 
     const makeReceipt = (items, centro) => {
       const sub  = items.reduce((s,i)=>s+i.price*i.qty,0);
@@ -420,16 +422,19 @@ function POS({ theme, toggleTheme }) {
       };
     };
 
-    if (ciboItems.length) receipts.push(makeReceipt(ciboItems, "🍕 CIBO"));
-    if (barItems.length)  receipts.push(makeReceipt(barItems,  "🍺 BAR"));
+    if (ciboItems.length)   receipts.push(makeReceipt(ciboItems,   "🍕 CIBO"));
+    if (frittiItems.length) receipts.push(makeReceipt(frittiItems, "🍟 FRITTI"));
+    if (barItems.length)    receipts.push(makeReceipt(barItems,    "🍺 BAR"));
 
-    // Crea anche una COMANDA per la cucina (solo articoli CIBO)
-    if (ciboItems.length && db) {
+    // Crea anche una COMANDA per la cucina (tutti gli articoli food: cibo + fritti)
+    const foodItems = [...ciboItems, ...frittiItems];
+    if (foodItems.length && db) {
+      const foodReceipt = receipts.find(r => r.centro === "🍕 CIBO" || r.centro === "🍟 FRITTI");
       const comanda = {
-        id: receipts.find(r => r.centro === "🍕 CIBO").id,
+        id: foodReceipt ? foodReceipt.id : rcptN,
         date: now,
         cliente: clienteFinale,
-        items: ciboItems.map((it, idx) => ({
+        items: foodItems.map((it, idx) => ({
           uid: idx,
           name: it.name,
           variant: it.variant || null,
@@ -495,8 +500,22 @@ function POS({ theme, toggleTheme }) {
   };
 
   const deleteComanda = (comanda) => {
-    if (!window.confirm("Eliminare la comanda di " + comanda.cliente + "?")) return;
+    if (!window.confirm("Eliminare definitivamente la comanda di " + comanda.cliente + "?")) return;
     if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).remove();
+  };
+
+  // Sposta una comanda (da attesa o lavorazione) direttamente nello storico
+  const archiviaComanda = (comanda) => {
+    if (!window.confirm("Spostare la comanda di " + comanda.cliente + " nello storico?")) return;
+    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update({ stato: "evasa", evasa: true });
+  };
+
+  // Riporta una comanda dallo storico allo stato "in attesa" (azzera le spunte)
+  const riportaInAttesa = (comanda) => {
+    if (db && comanda._key) {
+      const resetItems = (comanda.items || []).map(it => ({ ...it, done: false }));
+      db.ref("torneo/comande/" + comanda._key).update({ stato: "attesa", evasa: false, items: resetItems });
+    }
   };
 
   const deleteAllOrders = () => {
@@ -904,7 +923,7 @@ function POS({ theme, toggleTheme }) {
       {/* ── CUCINA MOBILE ── */}
       {view==="cucina" && (
         <div style={{flex:1,overflowY:"auto",padding:"12px 10px"}}>
-          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} svuotaStorico={svuotaStorico} isMobile={true} />
+          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} archiviaComanda={archiviaComanda} riportaInAttesa={riportaInAttesa} svuotaStorico={svuotaStorico} isMobile={true} />
         </div>
       )}
 
@@ -1169,7 +1188,7 @@ function POS({ theme, toggleTheme }) {
 
       {view==="cucina"&&(
         <div style={{padding:24,maxWidth:1000,margin:"0 auto",width:"100%",overflowY:"auto",height:"calc(100vh - 57px)"}}>
-          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} svuotaStorico={svuotaStorico} isMobile={false} />
+          <CucinaView comande={comande} toggleComandaItem={toggleComandaItem} evadiComanda={evadiComanda} consegnaScontrino={consegnaScontrino} deleteComanda={deleteComanda} archiviaComanda={archiviaComanda} riportaInAttesa={riportaInAttesa} svuotaStorico={svuotaStorico} isMobile={false} />
         </div>
       )}
 
@@ -1201,7 +1220,7 @@ function POS({ theme, toggleTheme }) {
   );
 }
 
-function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrino, deleteComanda, svuotaStorico, isMobile }) {
+function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrino, deleteComanda, archiviaComanda, riportaInAttesa, svuotaStorico, isMobile }) {
   const [tab, setTab] = React.useState("attesa"); // attesa | lavorazione | storico
 
   // Le comande nuove senza il campo stato sono considerate "attesa"
@@ -1291,8 +1310,8 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
             <button onClick={()=>consegnaScontrino(c)} style={{flex:2, background:"#dc2626", border:"none", color:"#fff", padding:"11px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:14, fontWeight:700}}>
               🔥 Scontrino consegnato
             </button>
-            <button onClick={()=>deleteComanda(c)} style={{flex:1, background:"#7f1d1d", border:"none", color:"#fca5a5", padding:"11px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:14}}>
-              🗑
+            <button onClick={()=>archiviaComanda(c)} style={{flex:1, background:"#3f2d12", border:"1px solid #b45309", color:"#fbbf24", padding:"11px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700}}>
+              📜 Storico
             </button>
           </div>
         )}
@@ -1301,15 +1320,18 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
             <button onClick={()=>evadiComanda(c)} style={{flex:2, background:C.success, border:"none", color:"#fff", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700}}>
               ✅ Evadi tutto
             </button>
-            <button onClick={()=>deleteComanda(c)} style={{flex:1, background:"#7f1d1d", border:"none", color:"#fca5a5", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13}}>
-              🗑
+            <button onClick={()=>archiviaComanda(c)} style={{flex:1, background:"#3f2d12", border:"1px solid #b45309", color:"#fbbf24", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700}}>
+              📜 Storico
             </button>
           </div>
         )}
         {evasa && (
           <div style={{display:"flex", gap:8, marginTop:12}}>
+            <button onClick={()=>riportaInAttesa(c)} style={{flex:1, background:"#1e3a5f", border:"1px solid #2563eb", color:"#93c5fd", padding:"9px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700}}>
+              ↩️ Rimetti in attesa
+            </button>
             <button onClick={()=>deleteComanda(c)} style={{flex:1, background:"#7f1d1d", border:"none", color:"#fca5a5", padding:"9px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12}}>
-              🗑 Elimina dallo storico
+              🗑 Elimina
             </button>
           </div>
         )}
@@ -1400,7 +1422,7 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
       menu.filter(i => i.cat === cat).forEach(item => {
         rows.push([
           cat,
-          CIBO_CATEGORIES.includes(cat) ? "CIBO" : "BAR",
+          FRITTI_CATEGORIES.includes(cat) ? "FRITTI" : CIBO_CATEGORIES.includes(cat) ? "CIBO" : "BAR",
           item.name,
           Number(item.price.toFixed(2)),
           (item.variants && item.variants.length) ? item.variants.join(" | ") : "",
@@ -1476,6 +1498,9 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
               <optgroup label="🍕 CIBO">
                 {CIBO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
+              <optgroup label="🍟 FRITTI">
+                {FRITTI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
               <optgroup label="🍺 BAR">
                 {BAR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
@@ -1537,7 +1562,7 @@ function ArticoliManager({ menu, saveMenu, isMobile }) {
             <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
               {catName}
               <span style={{fontSize:11,color:C.muted,fontWeight:400}}>
-                ({CIBO_CATEGORIES.includes(catName) ? "CIBO" : "BAR"})
+                ({FRITTI_CATEGORIES.includes(catName) ? "FRITTI" : CIBO_CATEGORIES.includes(catName) ? "CIBO" : "BAR"})
               </span>
             </div>
             {byCat[catName].length === 0 && (
