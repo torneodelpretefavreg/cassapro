@@ -240,6 +240,7 @@ function POS({ theme, toggleTheme }) {
   }, [autoPrint, view, lastR, rcptIdx]);
   const [synced, setSynced] = useState(false);
   const [syncStatus, setSyncStatus] = useState("local"); // local | connected | error
+  const [processing, setProcessing] = useState(false); // blocca doppio incasso
 
   // Firebase sync
   useEffect(() => {
@@ -252,6 +253,8 @@ function POS({ theme, toggleTheme }) {
         const arr = Object.entries(val).map(([k,v])=>({...v,_key:k})).sort((a,b)=>a.id-b.id);
         setOrders(arr);
         localStorage.setItem("orders", JSON.stringify(arr));
+        // Tiene il contatore locale sempre avanti rispetto al massimo id già su Firebase
+        if (arr.length) { const maxId = arr[arr.length-1].id || 0; if (maxId + 1 > rcptN) rcptN = maxId + 1; }
       } else {
         setOrders([]);
       }
@@ -375,100 +378,130 @@ function POS({ theme, toggleTheme }) {
   const clearCart = ()=>{setCart([]);setDisc(0);setTable("");};
 
 
+  // Stampa automatica in sequenza di tutti gli scontrini dell'ultimo ordine.
+  // window.print() è bloccante in modalità finestra di dialogo: dopo che torna,
+  // passiamo allo scontrino successivo. In modalità chiosco (stampa silenziosa)
+  // i lavori vengono accodati con un piccolo intervallo tra l'uno e l'altro.
+  const printAllReceipts = (total) => {
+    if (!total || total < 1) return;
+    const step = (k) => {
+      setRcptIdx(k);
+      setTimeout(() => {
+        try { window.print(); } catch (e) {}
+        if (k + 1 < total) setTimeout(() => step(k + 1), 400);
+      }, 500); // attende il render del nuovo scontrino
+    };
+    step(0);
+  };
+
   const checkout = () => {
     if (!cart.length) return;
     if (!table.trim()) {
       alert("Inserisci il nome del cliente prima di incassare.");
       return;
     }
+    if (processing) return;          // evita doppio tap / doppio incasso
+    setProcessing(true);
+
     const now = new Date().toLocaleString("it-IT");
     const nomeBase = table.trim();
+    const escNome = nomeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Cerca comande non evase con lo stesso nome (o con suffisso "Nome N")
     const attive = comande.filter(c => !c.evasa);
-    const regex = new RegExp("^" + nomeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "( \\d+)?$", "i");
+    const regex = new RegExp("^" + escNome + "( \\d+)?$", "i");
     const conflitti = attive.filter(c => c.cliente && regex.test(c.cliente));
     let clienteFinale = nomeBase;
     if (conflitti.length > 0) {
-      // Trova il numero massimo già usato
       let maxN = 1;
       conflitti.forEach(c => {
-        const match = c.cliente.match(new RegExp("^" + nomeBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " (\\d+)$", "i"));
-        if (match) {
-          const n = parseInt(match[1]);
-          if (n > maxN) maxN = n;
-        }
+        const match = c.cliente.match(new RegExp("^" + escNome + " (\\d+)$", "i"));
+        if (match) { const n = parseInt(match[1]); if (n > maxN) maxN = n; }
       });
       clienteFinale = nomeBase + " " + (maxN + 1);
     }
+
     const ciboItems   = cart.filter(i => CIBO_CATEGORIES.includes(i.cat));
     const frittiItems = cart.filter(i => FRITTI_CATEGORIES.includes(i.cat));
     const barItems    = cart.filter(i => BAR_CATEGORIES.includes(i.cat));
-    const receipts    = [];
+    const nReceipts = (ciboItems.length?1:0) + (frittiItems.length?1:0) + (barItems.length?1:0);
+    if (!nReceipts) { setProcessing(false); return; }
 
-    const makeReceipt = (items, centro) => {
-      const sub  = items.reduce((s,i)=>s+i.price*i.qty,0);
-      const dAmt = sub*(disc/100);
-      return {
-        id: rcptN++,
-        date: now,
-        items,
-        subtotal: sub,
-        disc,
-        discAmt: dAmt,
-        total: sub - dAmt,
-        pay,
-        table: clienteFinale,
-        centro,
+    // Costruisce e salva gli scontrini a partire dal primo numero assegnato
+    const finishCheckout = (firstId) => {
+      let n = firstId;
+      const receipts = [];
+      const makeReceipt = (items, centro) => {
+        const sub  = items.reduce((s,i)=>s+i.price*i.qty,0);
+        const dAmt = sub*(disc/100);
+        return { id: n++, date: now, items, subtotal: sub, disc, discAmt: dAmt, total: sub - dAmt, pay, table: clienteFinale, centro };
       };
-    };
+      if (ciboItems.length)   receipts.push(makeReceipt(ciboItems,   "🍕 CIBO"));
+      if (frittiItems.length) receipts.push(makeReceipt(frittiItems, "🍟 FRITTI"));
+      if (barItems.length)    receipts.push(makeReceipt(barItems,    "🍺 BAR"));
 
-    if (ciboItems.length)   receipts.push(makeReceipt(ciboItems,   "🍕 CIBO"));
-    if (frittiItems.length) receipts.push(makeReceipt(frittiItems, "🍟 FRITTI"));
-    if (barItems.length)    receipts.push(makeReceipt(barItems,    "🍺 BAR"));
+      // COMANDA per la cucina (tutti gli articoli food: cibo + fritti)
+      const foodItems = [...ciboItems, ...frittiItems];
+      if (foodItems.length && db) {
+        const foodReceipt = receipts.find(r => r.centro === "🍕 CIBO" || r.centro === "🍟 FRITTI");
+        const comanda = {
+          id: foodReceipt ? foodReceipt.id : firstId,
+          date: now,
+          cliente: clienteFinale,
+          items: foodItems.map((it, idx) => ({ uid: idx, name: it.name, variant: it.variant || null, qty: it.qty, done: false })),
+          stato: "attesa",
+          evasa: false,
+        };
+        db.ref("torneo/comande").push(comanda);
+      }
 
-    // Crea anche una COMANDA per la cucina (tutti gli articoli food: cibo + fritti)
-    const foodItems = [...ciboItems, ...frittiItems];
-    if (foodItems.length && db) {
-      const foodReceipt = receipts.find(r => r.centro === "🍕 CIBO" || r.centro === "🍟 FRITTI");
-      const comanda = {
-        id: foodReceipt ? foodReceipt.id : rcptN,
-        date: now,
-        cliente: clienteFinale,
-        items: foodItems.map((it, idx) => ({
-          uid: idx,
-          name: it.name,
-          variant: it.variant || null,
-          qty: it.qty,
-          done: false,
-        })),
-        stato: "attesa",  // attesa | lavorazione | evasa
-        evasa: false,
-      };
-      db.ref("torneo/comande").push(comanda);
-    }
+      rcptN = n;
+      localStorage.setItem("rcpt_n", rcptN);
 
-    localStorage.setItem("rcpt_n", rcptN);
-
-    receipts.forEach(r => {
-      if (db) {
-        db.ref("torneo/orders").push(r).catch(()=>{
+      receipts.forEach(r => {
+        if (db) {
+          db.ref("torneo/orders").push(r).catch(()=>{
+            const no=[...orders,...receipts];
+            setOrders(no);
+            localStorage.setItem("orders",JSON.stringify(no));
+          });
+        } else {
           const no=[...orders,...receipts];
           setOrders(no);
           localStorage.setItem("orders",JSON.stringify(no));
-        });
-      } else {
-        const no=[...orders,...receipts];
-        setOrders(no);
-        localStorage.setItem("orders",JSON.stringify(no));
-      }
-    });
+        }
+      });
 
-    setLastR(receipts); // array of receipts
-    setRcptIdx(0);
-    clearCart();
-    setView("scontrino");
-    // Stampa automatica dopo un breve delay per dare tempo al render
-    setTimeout(() => { window.print(); }, 600);
+      setLastR(receipts);
+      setRcptIdx(0);
+      clearCart();
+      setView("scontrino");
+      setProcessing(false);
+      printAllReceipts(receipts.length);
+    };
+
+    if (db) {
+      // Numerazione globale e atomica: riserva nReceipts numeri sul contatore condiviso
+      const maxExisting = orders.reduce((m,o)=>Math.max(m, o.id||0), 0);
+      let done = false;
+      const fallbackTimer = setTimeout(() => {
+        if (done) return; done = true;
+        finishCheckout(Math.max(rcptN, maxExisting + 1));
+      }, 2500);
+      db.ref("torneo/counter").transaction(cur => {
+        const base = (typeof cur === "number" && cur >= maxExisting) ? cur : maxExisting;
+        return base + nReceipts;
+      }).then(res => {
+        if (done) return; done = true; clearTimeout(fallbackTimer);
+        const committed = (res && res.snapshot) ? res.snapshot.val() : null;
+        const firstId = (typeof committed === "number") ? (committed - nReceipts + 1) : Math.max(rcptN, maxExisting + 1);
+        finishCheckout(firstId);
+      }).catch(() => {
+        if (done) return; done = true; clearTimeout(fallbackTimer);
+        finishCheckout(Math.max(rcptN, maxExisting + 1));
+      });
+    } else {
+      finishCheckout(rcptN);
+    }
   };
 
   // === FUNZIONI COMANDE (Cucina) ===
@@ -787,8 +820,8 @@ function POS({ theme, toggleTheme }) {
                     <button onClick={clearCart} style={{flex:1,background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700}}>
                       🗑 Cancella
                     </button>
-                    <button onClick={checkout} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:900}}>
-                      ✅ Incassa {fmt(total)}
+                    <button onClick={checkout} disabled={processing} style={{flex:2,background:processing?"#166534":"#15803d",border:"none",color:"#fff",padding:"13px",borderRadius:10,cursor:processing?"wait":"pointer",opacity:processing?0.6:1,fontFamily:"inherit",fontSize:15,fontWeight:900}}>
+                      {processing ? "⏳ Attendi…" : <>✅ Incassa {fmt(total)}</>}
                     </button>
                   </div>
                 </div>
@@ -1057,7 +1090,7 @@ function POS({ theme, toggleTheme }) {
               </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={clearCart} style={{flex:1,background:"#7f1d1d",border:"none",color:"#fca5a5",padding:"10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>🗑 Cancella</button>
-                <button onClick={checkout} disabled={!cart.length} style={{flex:2,background:"#15803d",border:"none",color:"#fff",padding:"10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700}}>✅ Incassa {fmt(total)}</button>
+                <button onClick={checkout} disabled={!cart.length || processing} style={{flex:2,background:processing?"#166534":"#15803d",border:"none",color:"#fff",padding:"10px",borderRadius:8,cursor:processing?"wait":"pointer",opacity:processing?0.6:1,fontFamily:"inherit",fontSize:13,fontWeight:700}}>{processing ? "⏳ Attendi…" : <>✅ Incassa {fmt(total)}</>}</button>
               </div>
             </div>
           </div>
