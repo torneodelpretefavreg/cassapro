@@ -509,11 +509,9 @@ function POS({ theme, toggleTheme }) {
     const newItems = comanda.items.map(it =>
       it.uid === itemUid ? {...it, done: !it.done} : it
     );
-    const allDone = newItems.every(it => it.done);
-    const update = { items: newItems, evasa: allDone };
-    if (allDone) update.stato = "evasa";
-    else if (comanda.stato === "evasa") update.stato = "lavorazione";
-    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update(update);
+    // NB: spuntare tutte le voci NON archivia più la comanda in automatico.
+    // La comanda resta in lavorazione finché non viene eliminata/archiviata a mano.
+    if (db && comanda._key) db.ref("torneo/comande/" + comanda._key).update({ items: newItems });
   };
 
   const consegnaScontrino = (comanda) => {
@@ -1273,11 +1271,13 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
     const stato = getStato(c);
     const evasa = stato === "evasa";
     const isAttesa = stato === "attesa";
+    const allDone = !isAttesa && !evasa && c.items.length > 0 && c.items.every(it => it.done);
 
-    const borderColor = isAttesa ? "#fbbf24" : (evasa ? C.border : "#dc2626");
+    const borderColor = isAttesa ? "#fbbf24" : (evasa ? C.border : (allDone ? "#15803d" : "#dc2626"));
     const badgeColor  = isAttesa ? {bg:"#713f12",text:"#fbbf24",icon:"⏳",label:"IN ATTESA"}
                        : (evasa ? {bg:C.successBg,text:"#4ade80",icon:"✅",label:"EVASA"}
-                                : {bg:"#991b1b",text:"#fff",icon:"🔥",label:"IN LAVORAZ."});
+                                : (allDone ? {bg:C.successBg,text:"#4ade80",icon:"✔️",label:"PRONTA"}
+                                           : {bg:"#991b1b",text:"#fff",icon:"🔥",label:"IN LAVORAZ."}));
 
     return (
       <div style={{background:C.bg, borderRadius:12, padding:14, border:"2px solid "+borderColor, marginBottom:10, opacity:evasa?0.6:1}}>
@@ -1350,9 +1350,15 @@ function CucinaView({ comande, toggleComandaItem, evadiComanda, consegnaScontrin
         )}
         {!isAttesa && !evasa && (
           <div style={{display:"flex", gap:8, marginTop:12}}>
-            <button onClick={()=>evadiComanda(c)} style={{flex:2, background:C.success, border:"none", color:"#fff", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700}}>
-              ✅ Evadi tutto
-            </button>
+            {allDone ? (
+              <button onClick={()=>deleteComanda(c)} style={{flex:2, background:"#7f1d1d", border:"none", color:"#fff", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700}}>
+                🗑 Elimina comanda
+              </button>
+            ) : (
+              <button onClick={()=>evadiComanda(c)} style={{flex:2, background:C.success, border:"none", color:"#fff", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700}}>
+                ✅ Evadi tutto
+              </button>
+            )}
             <button onClick={()=>archiviaComanda(c)} style={{flex:1, background:"#3f2d12", border:"1px solid #b45309", color:"#fbbf24", padding:"10px", borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700}}>
               📜 Storico
             </button>
