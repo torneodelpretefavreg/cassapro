@@ -40,6 +40,7 @@
     /* monospace solo dove serve davvero */
     .mono, [style*="Courier"] { font-family: 'JetBrains Mono', 'Courier New', monospace !important; }
     #root { height: 100%; }
+    .app-shell { height: 100vh; height: 100dvh; }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
@@ -147,6 +148,16 @@
         padding: 2mm !important; font-weight: bold !important;
         -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
       }
+      /* Microstampa per apertura cassetto: nasconde lo scontrino e stampa solo il kick */
+      #drawer-print, #drawer-print * { visibility: hidden !important; }
+      html.printing-drawer #receipt-print, html.printing-drawer #receipt-print * { visibility: hidden !important; }
+      html.printing-drawer #drawer-print, html.printing-drawer #drawer-print * { visibility: visible !important; }
+      html.printing-drawer #drawer-print {
+        position: fixed !important; top: 0 !important; left: 0 !important;
+        width: 72mm !important; font-family: 'Courier New', monospace !important;
+        font-size: 11px !important; color: #000 !important; background: #fff !important;
+        padding: 2mm !important; font-weight: bold !important;
+      }
     }
   </style>
 </head>
@@ -242,6 +253,25 @@ function POS({ theme, toggleTheme }) {
   const [syncStatus, setSyncStatus] = useState("local"); // local | connected | error
   const [processing, setProcessing] = useState(false); // blocca doppio incasso
 
+  // Persistenza ordini su localStorage "throttled": evita di serializzare l'intera
+  // lista in modo sincrono a ogni nuovo ordine (causa di blocchi sotto carico).
+  const persistTimer  = useRef(null);
+  const pendingOrders = useRef(null);
+  const persistOrders = (arr) => {
+    pendingOrders.current = arr;
+    if (persistTimer.current) return;
+    persistTimer.current = setTimeout(() => {
+      persistTimer.current = null;
+      try { localStorage.setItem("orders", JSON.stringify(pendingOrders.current)); } catch (e) {}
+    }, 4000);
+  };
+  useEffect(() => {
+    const flush = () => { try { if (pendingOrders.current) localStorage.setItem("orders", JSON.stringify(pendingOrders.current)); } catch (e) {} };
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => { window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); };
+  }, []);
+
   // Firebase sync
   useEffect(() => {
     if (!db) { setSyncStatus("local"); return; }
@@ -252,7 +282,7 @@ function POS({ theme, toggleTheme }) {
       if (val) {
         const arr = Object.entries(val).map(([k,v])=>({...v,_key:k})).sort((a,b)=>a.id-b.id);
         setOrders(arr);
-        localStorage.setItem("orders", JSON.stringify(arr));
+        persistOrders(arr);
         // Tiene il contatore locale sempre avanti rispetto al massimo id già su Firebase
         if (arr.length) { const maxId = arr[arr.length-1].id || 0; if (maxId + 1 > rcptN) rcptN = maxId + 1; }
       } else {
@@ -376,6 +406,18 @@ function POS({ theme, toggleTheme }) {
   };
   const remItem = id => setCart(p=>{const e=p.find(i=>i.id===id);return e.qty===1?p.filter(i=>i.id!==id):p.map(i=>i.id===id?{...i,qty:i.qty-1}:i);});
   const clearCart = ()=>{setCart([]);setDisc(0);setTable("");};
+
+  // Apertura cassetto: la stampante (col cassetto collegato via RJ) va impostata
+  // per aprire il cassetto a ogni stampa. Questo invia una microstampa che fa
+  // scattare il kick. Funziona su tutti i dispositivi (iPhone/Android/PC).
+  const openDrawer = () => {
+    const html = document.documentElement;
+    html.classList.add("printing-drawer");
+    const cleanup = () => { html.classList.remove("printing-drawer"); window.removeEventListener("afterprint", cleanup); };
+    window.addEventListener("afterprint", cleanup);
+    setTimeout(() => { try { window.print(); } catch (e) {} }, 50);
+    setTimeout(cleanup, 4000); // fallback se "afterprint" non scatta (es. iOS)
+  };
 
 
   // Stampa automatica in sequenza di tutti gli scontrini dell'ultimo ordine.
@@ -585,15 +627,23 @@ function POS({ theme, toggleTheme }) {
     setView(isMobile ? "carrello" : "cassa");
   };
 
-  const CATS = ["Tutti", ...ALL_CATEGORIES.filter(c => menu.some(i => i.cat === c))];
-  const filtered = menu.filter(i=>(cat==="Tutti"||i.cat===cat)&&i.name.toLowerCase().includes(search.toLowerCase()));
+  const CATS = React.useMemo(() => ["Tutti", ...ALL_CATEGORIES.filter(c => menu.some(i => i.cat === c))], [menu]);
+  const filtered = React.useMemo(
+    () => menu.filter(i=>(cat==="Tutti"||i.cat===cat)&&i.name.toLowerCase().includes(search.toLowerCase())),
+    [menu, cat, search]
+  );
 
-  const today    = new Date().toLocaleDateString("it-IT");
-  const todayO   = orders.filter(o=>o.date.startsWith(today));
-  const todayRev = todayO.reduce((s,o)=>s+o.total,0);
-  const totalRev = orders.reduce((s,o)=>s+o.total,0);
-  const payBreak = orders.reduce((a,o)=>{a[o.pay]=(a[o.pay]||0)+o.total;return a;},{});
-  const topItems = Object.entries(orders.flatMap(o=>o.items).reduce((a,i)=>{a[i.name]=(a[i.name]||0)+i.qty;return a;},{})).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const today = new Date().toLocaleDateString("it-IT");
+  const { todayO, todayRev, totalRev, payBreak, topItems } = React.useMemo(() => {
+    const _todayO   = orders.filter(o=>o.date && o.date.startsWith(today));
+    const _todayRev = _todayO.reduce((s,o)=>s+(o.total||0),0);
+    const _totalRev = orders.reduce((s,o)=>s+(o.total||0),0);
+    const _payBreak = orders.reduce((a,o)=>{a[o.pay]=(a[o.pay]||0)+(o.total||0);return a;},{});
+    const _topItems = Object.entries(
+      orders.flatMap(o=>o.items||[]).reduce((a,i)=>{a[i.name]=(a[i.name]||0)+i.qty;return a;},{})
+    ).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    return { todayO:_todayO, todayRev:_todayRev, totalRev:_totalRev, payBreak:_payBreak, topItems:_topItems };
+  }, [orders, today]);
 
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -670,15 +720,18 @@ function POS({ theme, toggleTheme }) {
 
   /* ── MOBILE LAYOUT ── */
   if (isMobile) return (
-    <div style={{height:"100dvh",display:"flex",flexDirection:"column",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",overflow:"hidden"}}>
+    <div className="app-shell" style={{display:"flex",flexDirection:"column",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",overflow:"hidden"}}>
+
+      {/* Microstampa nascosta per apertura cassetto */}
+      <div id="drawer-print" style={{position:"fixed",left:"-9999px",top:0,visibility:"hidden",textAlign:"center",fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,fontWeight:700}}>APERTURA CASSETTO</div>
 
       {/* MODAL SELETTORE VARIANTI */}
       {variantPick && (
         <div onClick={()=>setVariantPick(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
-            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px"}}>{variantPick.name}</div>
-            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli le opzioni — puoi selezionarne più di una, poi premi Fatto</div>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",maxHeight:"88dvh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px",flexShrink:0}}>{variantPick.name}</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16,flexShrink:0}}>Scegli le opzioni — puoi selezionarne più di una, poi premi Fatto</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10,overflowY:"auto",minHeight:0,flex:"1 1 auto",margin:"0 -4px",padding:"4px"}}>
               {variantPick.variants.map(v => {
                 const on = variantSel.includes(v);
                 return (
@@ -689,7 +742,7 @@ function POS({ theme, toggleTheme }) {
                 );
               })}
             </div>
-            <div style={{display:"flex",gap:10,marginTop:16}}>
+            <div style={{display:"flex",gap:10,marginTop:16,flexShrink:0}}>
               <button onClick={()=>{setVariantPick(null);setVariantSel([]);}} style={{flex:1,background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
                 Annulla
               </button>
@@ -744,8 +797,9 @@ function POS({ theme, toggleTheme }) {
           {view==="cassa" && (
             <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
               {/* Search */}
-              <div style={{padding:"8px 10px",flexShrink:0}}>
-                <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cerca..." style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
+              <div style={{padding:"8px 10px",flexShrink:0,display:"flex",gap:8}}>
+                <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cerca..." style={{flex:1,minWidth:0,background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
+                <button onClick={openDrawer} title="Apri cassetto" style={{flexShrink:0,width:48,background:"#334155",border:"1px solid #475569",color:"#fff",borderRadius:10,cursor:"pointer",fontSize:20}}>💶</button>
               </div>
               {/* Category pills */}
               <div style={{display:"flex",gap:6,padding:"0 10px 8px",overflowX:"auto",flexShrink:0,scrollbarWidth:"none"}}>
@@ -775,7 +829,7 @@ function POS({ theme, toggleTheme }) {
                 <input value={table} onChange={e=>setTable(e.target.value)} placeholder="👤 Nome cliente (obbligatorio)" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 14px",borderRadius:10,fontSize:14,fontFamily:"inherit",outline:"none"}} />
               </div>
               {/* Cart items */}
-              <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"0 10px"}}>
+              <div style={{flex:1,overflowY:"auto",minHeight:0,padding:"0 10px"}}>
                 {!cart.length && (
                   <div style={{textAlign:"center",color:"#475569",padding:"40px 0",fontSize:15}}>
                     Nessun articolo<br/><span style={{fontSize:36}}>🛒</span>
@@ -989,15 +1043,17 @@ function POS({ theme, toggleTheme }) {
 
   /* ── DESKTOP LAYOUT (invariato) ── */
   return (
-    <div style={{height:"100vh",overflow:"hidden",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",display:"flex",flexDirection:"column"}}>
+    <div style={{minHeight:"100vh",background:"#0f172a",color:"#e2e8f0",fontFamily:"inherit",display:"flex",flexDirection:"column"}}>
+      {/* Microstampa nascosta per apertura cassetto */}
+      <div id="drawer-print" style={{position:"fixed",left:"-9999px",top:0,visibility:"hidden",textAlign:"center",fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,fontWeight:700}}>APERTURA CASSETTO</div>
 
       {/* MODAL SELETTORE VARIANTI */}
       {variantPick && (
         <div onClick={()=>setVariantPick(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
-            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px"}}>{variantPick.name}</div>
-            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>Scegli le opzioni — puoi selezionarne più di una, poi premi Fatto</div>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:20,maxWidth:380,width:"100%",maxHeight:"88dvh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:6,letterSpacing:"-0.3px",flexShrink:0}}>{variantPick.name}</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:16,flexShrink:0}}>Scegli le opzioni — puoi selezionarne più di una, poi premi Fatto</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10,overflowY:"auto",minHeight:0,flex:"1 1 auto",margin:"0 -4px",padding:"4px"}}>
               {variantPick.variants.map(v => {
                 const on = variantSel.includes(v);
                 return (
@@ -1008,7 +1064,7 @@ function POS({ theme, toggleTheme }) {
                 );
               })}
             </div>
-            <div style={{display:"flex",gap:10,marginTop:16}}>
+            <div style={{display:"flex",gap:10,marginTop:16,flexShrink:0}}>
               <button onClick={()=>{setVariantPick(null);setVariantSel([]);}} style={{flex:1,background:"transparent",border:"1px solid #334155",color:"#94a3b8",padding:"12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
                 Annulla
               </button>
@@ -1030,6 +1086,7 @@ function POS({ theme, toggleTheme }) {
         </div>
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:12}}>
           <span style={{color:"#64748b",fontSize:12}}>{new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})}</span>
+          <button onClick={openDrawer} title="Apri cassetto" style={{background:"#334155",border:"1px solid #475569",color:"#fff",padding:"6px 14px",borderRadius:8,fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>💶 Apri cassetto</button>
           <button onClick={toggleTheme} title="Cambia tema" style={{background:"#334155",border:"none",color:"#fff",width:36,height:36,borderRadius:8,fontSize:16,cursor:"pointer"}}>
             {theme==="dark"?"☀️":"🌙"}
           </button>
@@ -1040,12 +1097,12 @@ function POS({ theme, toggleTheme }) {
 
       {view==="cassa"&&(
         <div style={{display:"flex",flex:1,height:"calc(100vh - 57px)",overflow:"hidden"}}>
-          <div style={{flex:1,display:"flex",flexDirection:"column",padding:16,overflow:"hidden",borderRight:"1px solid #1e293b",gap:10,minHeight:0}}>
+          <div style={{flex:1,display:"flex",flexDirection:"column",padding:16,overflow:"hidden",borderRight:"1px solid #1e293b",gap:10}}>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cerca prodotto..." style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"8px 14px",borderRadius:8,fontSize:14,fontFamily:"inherit",outline:"none"}} />
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {CATS.map(c=><button key={c} onClick={()=>setCat(c)} style={{background:cat===c?"#dc2626":"#1e293b",border:`1px solid ${cat===c?"#dc2626":"#334155"}`,color:cat===c?"#fff":"#94a3b8",padding:"4px 12px",borderRadius:20,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>{c}</button>)}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,overflowY:"auto",flex:1,minHeight:0}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,overflowY:"auto",flex:1}}>
               {filtered.map(item=>(
                 <button key={item.id} onClick={()=>addItem(item)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:10,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#e2e8f0",fontFamily:"inherit"}}>
                   <div style={{fontSize:12,fontWeight:600,marginBottom:6,lineHeight:1.3}}>{item.name}</div>
@@ -1054,12 +1111,12 @@ function POS({ theme, toggleTheme }) {
               ))}
             </div>
           </div>
-          <div style={{width:340,display:"flex",flexDirection:"column",minHeight:0,background:"#131f30"}}>
+          <div style={{width:340,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0,background:"#131f30"}}>
             <div style={{padding:"14px 16px 10px",borderBottom:"1px solid #1e293b"}}>
               <span style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>🛒 Ordine</span>
               <input value={table} onChange={e=>setTable(e.target.value)} placeholder="Nome cliente (obbligatorio)" style={{width:"100%",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"6px 10px",borderRadius:6,fontSize:13,fontFamily:"inherit",outline:"none",marginTop:8}} />
             </div>
-            <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"8px 12px"}}>
+            <div style={{flex:1,overflowY:"auto",minHeight:0,padding:"8px 12px"}}>
               {!cart.length&&<div style={{textAlign:"center",color:"#475569",padding:"40px 0",fontSize:15}}>Nessun articolo<br/><span style={{fontSize:32}}>🛒</span></div>}
               {cart.map(item=>(
                 <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid #1e293b"}}>
@@ -1073,7 +1130,7 @@ function POS({ theme, toggleTheme }) {
                 </div>
               ))}
             </div>
-            <div style={{padding:"12px 14px",borderTop:"1px solid #1e293b",flexShrink:0}}>
+            <div style={{padding:"12px 14px",borderTop:"1px solid #1e293b"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                 <span style={{color:"#94a3b8"}}>Sconto %</span>
                 <input type="number" min="0" max="100" value={disc} onChange={e=>setDisc(Math.min(100,Math.max(0,+e.target.value)))} style={{background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"4px 8px",borderRadius:6,width:60,textAlign:"center",fontSize:14,fontFamily:"inherit",outline:"none"}} />
